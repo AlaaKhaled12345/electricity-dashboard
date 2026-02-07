@@ -1,0 +1,163 @@
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import os
+
+# 1. إعداد الصفحة
+st.set_page_config(layout="wide", page_title="لوحة تحكم الكهرباء", page_icon="⚡")
+st.markdown("""
+<style>
+    .main {direction: rtl;}
+    h1, h2, h3, h4, p, div {text-align: right; font-family: 'Segoe UI', sans-serif;}
+    .stDataFrame {width: 100%;}
+</style>
+""", unsafe_allow_html=True)
+
+st.sidebar.title("🔍 القائمة الرئيسية")
+page = st.sidebar.radio("القسم:", ["المحطات العامة", "الموزعات (517)", "شمال الإسماعيلية"])
+
+# 2. دوال التحميل (معدلة لتقرأ محلياً)
+@st.cache_data
+def load_stations():
+    # يقرأ الملف الموجود بجانب الكود مباشرة
+    if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
+        df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
+        if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
+        else: df['ملاحظات'] = 'غير متوفر'
+        df['العدد'] = 1
+        return df
+    return None
+
+@st.cache_data
+def load_distributors():
+    # يبحث عن أي ملف ينتهي بـ xlsx أو csv ويحتوي على 517
+    files = [f for f in os.listdir('.') if "517" in f and (f.endswith('.xlsx') or f.endswith('.csv'))]
+    if not files: return None, None
+    
+    path = files[0]
+    if path.endswith('.csv'): df = pd.read_csv(path).iloc[:, [1, 2, 3, 4]]
+    else: df = pd.read_excel(path).iloc[:, [1, 2, 3, 4]]
+        
+    df.columns = ['القطاع', 'الهندسة', 'مسلسل', 'الموزع']
+    df = df.replace('nan', pd.NA).ffill()
+    df = df[pd.to_numeric(df['مسلسل'], errors='coerce').notnull()]
+    df['القطاع'] = df['القطاع'].astype(str).str.strip()
+    df['الهندسة'] = df['الهندسة'].astype(str).str.strip()
+    
+    eng_counts = df.groupby('القطاع')['الهندسة'].nunique()
+    df['قطاع_للرسم'] = df['القطاع'].apply(lambda x: f"{x} (هندسات: {eng_counts.get(x, 0)})")
+    df['عدد_الموزعات'] = 1
+    summary = df.groupby('القطاع').agg({'الهندسة': 'nunique', 'الموزع': 'count'}).reset_index()
+    summary.columns = ['القطاع', 'عدد الهندسات', 'عدد الموزعات']
+    return df, summary
+
+# دوال الشمال
+def strict_classify(row, type_cols, col_name):
+    # (نفس منطق التصنيف السابق)
+    combined = ""
+    for col in type_cols:
+        val = str(row[col])
+        if pd.notna(val) and val != 'nan': combined += val + " "
+    
+    clean = combined.strip().replace('أ','ا').replace('ة','ه')
+    name_clean = str(row[col_name]).strip().replace('أ','ا').replace('ة','ه')
+    
+    if 'غرف' in clean or 'غرف' in name_clean: return 'غرفة'
+    if 'كشك' in clean: return 'كشك'
+    if 'هواي' in clean or 'علق' in clean: return 'هوائي'
+    return 'كشك'
+
+def process_file(path, fname):
+    try:
+        df_temp = pd.read_excel(path, header=None)
+        start = 0
+        for idx, row in df_temp.head(30).iterrows():
+            s = " ".join(row.astype(str).values)
+            if 'اسم' in s and 'محول' in s: start = idx; break
+        
+        df = pd.read_excel(path, header=start)
+        df.columns = df.columns.astype(str).str.strip()
+        
+        col_name = next((c for c in df.columns if 'اسم' in c or 'محول' in c or 'بيان' in c), None)
+        type_cols = [c for c in df.columns if 'نوع' in c or 'كشك' in c or 'غرف' in c]
+        col_cap = next((c for c in df.columns if 'قدرة' in c or 'kva' in c.lower()), None)
+        
+        if col_name:
+            df = df.dropna(subset=[col_name])
+            df = df[~df[col_name].astype(str).str.contains('total|اجمالي', case=False, na=False)]
+            df['النوع'] = df.apply(lambda x: strict_classify(x, type_cols, col_name), axis=1)
+            if col_cap:
+                df['القدرة'] = pd.to_numeric(df[col_cap].astype(str).str.replace(',','').str.replace(' ',''), errors='coerce').fillna(0)
+            else: df['القدرة'] = 0.0
+            
+            # تحديد الملكية والهندسة من اسم الملف
+            owner = 'ملك الشركة' if 'شركه' in fname else ('ملك الغير' if 'غير' in fname else 'غير محدد')
+            if 'زايد' in fname: eng = 'الشيخ زايد'
+            elif 'اول' in fname: eng = 'إسماعيلية أول'
+            elif 'ثان' in fname: eng = 'إسماعيلية ثان'
+            else: eng = 'غير محدد'
+            
+            return pd.DataFrame({'الهندسة': eng, 'الملكية': owner, 'اسم المحول': df[col_name], 'النوع': df['النوع'], 'القدرة': df['القدرة']})
+    except: return None
+
+@st.cache_data
+def load_north():
+    folder = 'North_Ismailia_Files' # هنا يقرأ من الفولدر المحلي
+    if not os.path.exists(folder): return None
+    all_dfs = []
+    for f in os.listdir(folder):
+        if f.endswith(('.xls','.xlsx')) and not f.startswith('~$'):
+            res = process_file(os.path.join(folder, f), f)
+            if res is not None: all_dfs.append(res)
+    if all_dfs:
+        df = pd.concat(all_dfs)
+        df['القطاع'] = 'شمال الإسماعيلية'
+        return df
+    return None
+
+# 3. الواجهة
+if page == "المحطات العامة":
+    st.header("توزيع المحطات")
+    df = load_stations()
+    if df is not None:
+        fig1 = px.sunburst(df, path=['القطاع', 'المحطة'], values='العدد', height=600, hover_data={'ملاحظات':True})
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        cnt = df['القطاع'].value_counts().reset_index()
+        cnt.columns = ['القطاع', 'عدد المحطات']
+        fig2 = px.bar(cnt, x='القطاع', y='عدد المحطات', color='القطاع', text='عدد المحطات')
+        fig2.update_traces(textposition='outside')
+        st.plotly_chart(fig2, use_container_width=True)
+        st.dataframe(df, use_container_width=True)
+    else: st.error("ملف المحطات غير موجود! تأكد من رفعه.")
+
+elif page == "الموزعات (517)":
+    st.header("توزيع الموزعات")
+    df, summ = load_distributors()
+    if df is not None:
+        st.dataframe(summ, use_container_width=True)
+        fig_sun = px.sunburst(df, path=['قطاع_للرسم','الهندسة','الموزع'], values='عدد_الموزعات', height=600)
+        st.plotly_chart(fig_sun, use_container_width=True)
+        
+        cnt = df.groupby(['القطاع','الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
+        fig_bar = px.bar(cnt, x='الهندسة', y='العدد', color='القطاع', text='العدد')
+        fig_bar.update_traces(textposition='outside', cliponaxis=False)
+        st.plotly_chart(fig_bar, use_container_width=True)
+    else: st.error("ملف الموزعات غير موجود.")
+
+elif page == "شمال الإسماعيلية":
+    st.header("قطاع الشمال")
+    df = load_north()
+    if df is not None:
+        k1,k2 = st.columns(2)
+        k1.metric("إجمالي القدرة", f"{df['القدرة'].sum():,.0f}")
+        k2.metric("عدد المحولات", len(df))
+        
+        fig_main = px.bar(df.groupby(['الهندسة','الملكية'])['القدرة'].sum().reset_index(), x='الهندسة', y='القدرة', color='الملكية', text='القدرة', barmode='group')
+        fig_main.update_traces(textposition='outside')
+        st.plotly_chart(fig_main, use_container_width=True)
+        
+        fig_sun = px.sunburst(df[df['القدرة']>0], path=['القطاع','الهندسة','الملكية','النوع','اسم المحول'], values='القدرة')
+        st.plotly_chart(fig_sun, use_container_width=True)
+        st.dataframe(df, use_container_width=True)
+    else: st.error("تأكد من وجود فولدر North_Ismailia_Files وداخله الملفات.")
