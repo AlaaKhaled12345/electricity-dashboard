@@ -3,7 +3,9 @@ import pandas as pd
 import plotly.express as px
 import os
 
+# ==========================================
 # 1. إعداد الصفحة وتنسيق اليمين لليسار
+# ==========================================
 st.set_page_config(layout="wide", page_title="لوحة تحكم الكهرباء", page_icon="⚡")
 st.markdown("""
 <style>
@@ -15,12 +17,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# الألوان الخاصة بشمال الإسماعيلية (نفس كود Colab)
+# الألوان (نفس كود Colab)
 COLOR_MAP = {
     'كشك': '#2E86C1',      # أزرق
     'غرفة': '#E74C3C',     # أحمر
     'هوائي': '#8E44AD',    # بنفسجي
-    'مبنى': '#F1C40F'      # أصفر (احتياطي)
+    'مبنى': '#F1C40F'      # أصفر
 }
 
 st.sidebar.title("🔍 القائمة الرئيسية")
@@ -31,6 +33,7 @@ page = st.sidebar.radio("القسم:", ["المحطات العامة", "المو
 # ==========================================
 @st.cache_data
 def load_stations():
+    # البحث عن الملف الرئيسي للمحطات
     if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
         df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
         if 'ملاحظات' in df.columns: 
@@ -99,27 +102,37 @@ def strict_classify_multi(row, type_cols, col_name):
 
 def process_file_final(file_path, filename):
     try:
-        # قراءة ذكية للبداية
+        # قراءة ذكية للبداية (لتجاوز السطور الفارغة في الأعلى)
         df_temp = pd.read_excel(file_path, header=None)
         start_row = 0
+        found_header = False
+        
+        # البحث في أول 30 سطر عن كلمة مفتاحية
         for idx, row in df_temp.head(30).iterrows():
             row_str = " ".join(row.astype(str).values)
             if ('اسم' in row_str and 'محول' in row_str) or \
                ('كشك' in row_str and 'غرفة' in row_str) or \
                ('بيان' in row_str) or \
-               ('قدرة' in row_str):
+               ('قدرة' in row_str) or \
+               ('عملية' in row_str):
                 start_row = idx
+                found_header = True
                 break
+        
+        # لو ملقاش هيدر، يجرب يقرأ من الأول
+        if not found_header:
+            start_row = 0
 
         df = pd.read_excel(file_path, header=start_row)
         df.columns = df.columns.astype(str).str.strip()
 
-        # تحديد الأعمدة
+        # تحديد الأعمدة بذكاء
         col_name = next((c for c in df.columns if 'اسم' in c or 'محول' in c or 'بيان' in c or 'عملية' in c), None)
         type_cols = [c for c in df.columns if 'نوع' in c or 'كشك' in c or 'غرف' in c or 'صنف' in c]
         col_cap  = next((c for c in df.columns if 'قدرة' in c or 'kva' in c.lower()), None)
 
         if col_name:
+            # تنظيف البيانات
             df_clean = df.dropna(subset=[col_name]).copy()
             df_clean = df_clean[~df_clean[col_name].astype(str).str.contains('total|اجمالي|عدد', case=False, na=False)]
             df_clean = df_clean[df_clean[col_name].astype(str).str.len() > 1]
@@ -127,7 +140,7 @@ def process_file_final(file_path, filename):
             # التصنيف الذكي
             df_clean['النوع_النهائي'] = df_clean.apply(lambda x: strict_classify_multi(x, type_cols, col_name), axis=1)
 
-            # القدرة
+            # استخراج القدرة بدقة (بدون تقريب)
             if col_cap:
                 df_clean['القدرة_النهائية'] = pd.to_numeric(
                     df_clean[col_cap].astype(str).str.replace(',', '').str.replace(' ', ''),
@@ -136,11 +149,13 @@ def process_file_final(file_path, filename):
             else:
                 df_clean['القدرة_النهائية'] = 0.0
 
-            # البيانات الوصفية من اسم الملف
+            # استنتاج الهندسة والملكية من اسم الملف
             fname_clean = filename.replace('أ', 'ا').replace('ة', 'ه')
+            
+            # منطق تحديد الهندسة (تم توسيعه ليشمل "ثان" و "ثانية")
             if 'زايد' in fname_clean: dist = 'الشيخ زايد'
             elif 'اول' in fname_clean or '1' in fname_clean: dist = 'إسماعيلية أول'
-            elif 'ثان' in fname_clean: dist = 'إسماعيلية ثان'
+            elif 'ثان' in fname_clean or '2' in fname_clean: dist = 'إسماعيلية ثان'
             else: dist = 'غير محدد'
 
             if 'شركه' in fname_clean: owner = 'ملك الشركة'
@@ -160,12 +175,15 @@ def process_file_final(file_path, filename):
 
 @st.cache_data
 def load_north_files():
-    # يقرأ كل ملفات الإكسيل في المسار الحالي ما عدا الملفات المعروفة
+    # يقرأ كل ملفات الإكسيل في المسار الحالي (.)
     all_dfs = []
+    # ملفات نتجاهلها عشان متبوظش الحسبة
     excluded_files = ['Electricity_Stations_Final_Cleaned.xlsx', 'requirements.txt', 'app.py']
     
-    for f in os.listdir('.'):
-        # شرط الفلترة: ملف اكسيل، ليس ملف المحطات، ولا يحتوي 517، وليس ملف مؤقت
+    current_files = os.listdir('.')
+    
+    for f in current_files:
+        # الشرط: ملف اكسيل، مش من الملفات المستبعدة، ولا يحتوي 517، ولا ملف مؤقت
         if f.endswith(('.xls', '.xlsx')) and \
            f not in excluded_files and \
            "517" not in f and \
@@ -225,12 +243,12 @@ elif page == "الموزعات (517)":
         fig_sun.update_layout(font=dict(size=14))
         st.plotly_chart(fig_sun, use_container_width=True)
         
-        # Bar Chart (Fixed X-Axis)
+        # Bar Chart
         st.subheader("أعداد الموزعات بالهندسات")
         cnt = df.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
         fig_bar = px.bar(cnt, x='الهندسة', y='العدد', color='القطاع', text='العدد')
         
-        # التعديل الهام: إجبار المحور الأفقي على عرض كل القيم
+        # إجبار المحور الأفقي على عرض كل القيم
         fig_bar.update_layout(xaxis=dict(tickmode='linear', type='category'))
         fig_bar.update_traces(textposition='outside')
         
@@ -243,23 +261,29 @@ elif page == "شمال الإسماعيلية":
     df = load_north_files()
     
     if df is not None:
-        # Metrics
+        # Metrics (مؤشرات بالأرقام)
         k1, k2, k3 = st.columns(3)
-        k1.metric("إجمالي القدرة (kVA)", f"{df['القدرة'].sum():,.0f}")
+        # تنسيق الرقم بفاصلة الآلاف وبدون تقريب عشوائي
+        k1.metric("إجمالي القدرة (kVA)", f"{df['القدرة'].sum():,.2f}")
         k2.metric("عدد المحولات", len(df))
         k3.metric("عدد الهندسات", df['الهندسة'].nunique())
         
         st.divider()
         
-        # 1. إجمالي القدرات (نفس Colab)
+        # ==========================================
+        # 1. إجمالي القدرات (مع الحفاظ على الكسور)
+        # ==========================================
         st.subheader("1. إجمالي القدرات الكلية (kVA)")
+        cap_summary = df.groupby(['الهندسة', 'الملكية'])['القدرة'].sum().reset_index()
+        
         fig_main = px.bar(
-            df.groupby(['الهندسة', 'الملكية'])['القدرة'].sum().reset_index(), 
+            cap_summary, 
             x='الهندسة', y='القدرة', color='الملكية', text='القدرة', 
             barmode='group',
             color_discrete_map={'ملك الشركة': '#003f5c', 'ملك الغير': '#bc5090'}
         )
-        fig_main.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        # هذا السطر يمنع التقريب ويظهر رقمين عشريين
+        fig_main.update_traces(texttemplate='%{text:,.2f}', textposition='outside')
         st.plotly_chart(fig_main, use_container_width=True)
         
         # تجهيز الداتا للنوع
@@ -267,9 +291,11 @@ elif page == "شمال الإسماعيلية":
             العدد=('اسم المحول', 'count'),
             إجمالي_القدرة=('القدرة', 'sum')
         ).reset_index()
-        category_order = {'النوع': ['كشك', 'غرفة', 'هوائي']}
+        category_order = {'النوع': ['كشك', 'غرفة', 'هوائي', 'مبنى']}
         
+        # ==========================================
         # 2. عدد المحولات (نفس Colab)
+        # ==========================================
         st.subheader("2. عدد المحولات والغرف حسب النوع")
         fig_count = px.bar(
             type_stats,
@@ -284,7 +310,9 @@ elif page == "شمال الإسماعيلية":
         fig_count.update_traces(textposition='outside')
         st.plotly_chart(fig_count, use_container_width=True)
 
-        # 3. القدرة حسب النوع (نفس Colab)
+        # ==========================================
+        # 3. القدرة حسب النوع (بدون تقريب)
+        # ==========================================
         st.subheader("3. توزيع القدرات حسب النوع")
         fig_cap_type = px.bar(
             type_stats,
@@ -296,10 +324,13 @@ elif page == "شمال الإسماعيلية":
             color_discrete_map=COLOR_MAP,
             category_orders=category_order
         )
-        fig_cap_type.update_traces(texttemplate='%{text:,.0f}', textposition='outside')
+        # إظهار الكسور بدقة
+        fig_cap_type.update_traces(texttemplate='%{text:,.2f}', textposition='outside')
         st.plotly_chart(fig_cap_type, use_container_width=True)
         
+        # ==========================================
         # 4. Sunburst (نفس Colab)
+        # ==========================================
         st.subheader("4. التوزيع الشجري للأحمال")
         df_sunburst = df[df['القدرة'] > 0]
         fig_sun = px.sunburst(
@@ -313,9 +344,11 @@ elif page == "شمال الإسماعيلية":
         fig_sun.update_traces(hovertemplate='<b>%{label}</b><br>القدرة: %{value:,.2f} kVA')
         st.plotly_chart(fig_sun, use_container_width=True)
         
-        # الجدول
+        # ==========================================
+        # 5. الجدول
+        # ==========================================
         st.subheader("جدول البيانات التفصيلي")
         st.dataframe(df[['الهندسة', 'الملكية', 'النوع', 'اسم المحول', 'القدرة']], use_container_width=True)
         
     else:
-        st.error("⚠️ لم يتم العثور على ملفات قطاع الشمال. تأكد من رفع الملفات (مثل: اسماعيلية اول، الشيخ زايد...) بجانب ملف app.py")
+        st.error("⚠️ لم يتم العثور على ملفات قطاع الشمال. تأكد من رفع الملفات في نفس المجلد.")
