@@ -102,7 +102,7 @@ def process_file(path, fname):
 
 @st.cache_data
 def load_north():
-    folder = 'North_Ismailia_Files' # هنا يقرأ من الفولدر المحلي
+    folder = '.' # هنا يقرأ من الفولدر المحلي
     if not os.path.exists(folder): return None
     all_dfs = []
     for f in os.listdir(folder):
@@ -161,3 +161,4 @@ elif page == "شمال الإسماعيلية":
         st.plotly_chart(fig_sun, use_container_width=True)
         st.dataframe(df, use_container_width=True)
     else: st.error("تأكد من وجود فولدر North_Ismailia_Files وداخله الملفات.")
+
