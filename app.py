@@ -29,17 +29,17 @@ st.markdown("""
 COLOR_MAP = {'كشك': '#2980b9', 'غرفة': '#c0392b', 'هوائي': '#8e44ad', 'مبنى': '#f1c40f'}
 
 # ==========================================
-# 2. دالة التوحيد القياسي (الحل الجذري للتكرار)
+# 2. دالة التوحيد القياسي (المرنة)
 # ==========================================
 def get_standard_sector_name(raw_name):
     """
-    تقوم هذه الدالة باستقبال الاسم المكتوب بأي طريقة وترجعه لاسم موحد.
+    تحاول توحيد الاسم، وإذا لم تجد تطابق، ترجع الاسم الأصلي بعد التنظيف بدلاً من حذفه.
     """
-    if pd.isna(raw_name): return None
+    if pd.isna(raw_name): return "غير محدد"
     s = str(raw_name).strip()
     
     # تنظيف الحروف العربية
-    s_clean = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه')
+    s_clean = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه').replace('ي', 'ى')
     
     # القواعد (Mapping Logic)
     if 'سويس' in s_clean: return 'قطاع السويس'
@@ -57,15 +57,17 @@ def get_standard_sector_name(raw_name):
         if 'وسط' in s_clean: return 'قطاع وسط الشرقية'
         
     if 'اسماعيليه' in s_clean:
-        # هنا يتم استبعاد الصفوف التجميعية مثل "قطاعي شمال - جنوب"
-        if 'شمال' in s_clean and 'جنوب' in s_clean: return None 
+        if 'شمال' in s_clean and 'جنوب' in s_clean: return s # حالة خاصة للاسم المركب نتركه كما هو
         if 'شمال' in s_clean: return 'قطاع شمال الإسماعيلية'
         if 'جنوب' in s_clean: return 'قطاع جنوب الإسماعيلية'
-        
-    return None # أي اسم لا يطابق القواعد أعلاه يتم حذفه
+    
+    # === التعديل هنا: عدم إرجاع None ===
+    # إذا لم يتم التعرف على الاسم، نرجعه كما هو (منظفاً) ليتم حسابه
+    if len(s_clean) < 3: return "غير محدد"
+    return s 
 
 # ==========================================
-# 3. دوال التحميل (محدثة لتطبيق التوحيد فوراً)
+# 3. دوال التحميل
 # ==========================================
 
 @st.cache_data
@@ -76,9 +78,9 @@ def load_stations():
             if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
             else: df['ملاحظات'] = 'غير متوفر'
             
-            # --- تطبيق التنظيف هنا ---
+            # تطبيق التنظيف
             df['القطاع'] = df['القطاع'].apply(get_standard_sector_name)
-            df = df.dropna(subset=['القطاع']) # حذف الصفوف التي لم يتم التعرف عليها
+            # تم إزالة سطر dropna لضمان عدم نقص العدد
             
             df['العدد'] = 1
             return df
@@ -101,9 +103,9 @@ def load_distributors():
         df = df.replace('nan', pd.NA).ffill()
         df = df[pd.to_numeric(df['مسلسل'], errors='coerce').notnull()]
         
-        # --- تطبيق التنظيف هنا ---
+        # تطبيق التنظيف
         df['القطاع'] = df['القطاع'].apply(get_standard_sector_name)
-        df = df.dropna(subset=['القطاع']) # حذف الصفوف غير المعروفة
+        # تم إزالة سطر dropna
         
         df['الهندسة'] = df['الهندسة'].astype(str).str.strip()
         eng_counts = df.groupby('القطاع')['الهندسة'].nunique()
@@ -203,13 +205,10 @@ tab_home, tab_north, tab_dist, tab_stations = st.tabs(["🏠 الرئيسية", 
 with tab_home:
     st.markdown("### 📊 ملخص بيانات الشركة")
     
-    # بما أننا قمنا بتنظيف البيانات عند التحميل، يمكننا الآن الاعتماد على التجميع المباشر
     unique_sectors = set()
     if df_st is not None: unique_sectors.update(df_st['القطاع'].unique())
     if df_dst is not None: unique_sectors.update(df_dst['القطاع'].unique())
-    
-    # حذف القيم الفارغة إن وجدت (زيادة تأكيد)
-    unique_sectors = {x for x in unique_sectors if x is not None and str(x) != 'nan'}
+    unique_sectors = {x for x in unique_sectors if x is not None and str(x) != 'nan' and str(x) != 'غير محدد'}
     
     count_sectors = len(unique_sectors)
     count_st = len(df_st) if df_st is not None else 0
@@ -219,11 +218,23 @@ with tab_home:
     c1, c2, c3, c4 = st.columns(4)
     with c1: 
         metric_card("عدد القطاعات", count_sectors, "قطاع جغرافي")
-        with st.expander("عرض القائمة الموحدة"):
-            st.write(sorted(list(unique_sectors)))
     with c2: metric_card("المحطات العامة", count_st, "محطة")
     with c3: metric_card("الموزعات", count_dst, "موزع (517)")
     with c4: metric_card("محولات الشمال", count_nth, "محول")
+
+    # إضافة Bar Chart المفقود
+    st.markdown("---")
+    st.markdown("#### مقارنة حجم البيانات (الأصول)")
+    
+    data_counts = {
+        'الفئة': ['محطات عامة', 'موزعات', 'محولات الشمال'],
+        'العدد': [count_st, count_dst, count_nth]
+    }
+    # رسم بياني بالأعمدة
+    fig_bar_summ = px.bar(data_counts, x='الفئة', y='العدد', color='الفئة', text='العدد', title="مقارنة أعداد الأصول")
+    fig_bar_summ.update_traces(textposition='outside')
+    fig_bar_summ.update_layout(height=400)
+    st.plotly_chart(fig_bar_summ, use_container_width=True)
 
     st.markdown("---")
     
