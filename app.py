@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import os
 
 # ==========================================
@@ -8,7 +9,6 @@ import os
 # ==========================================
 st.set_page_config(layout="wide", page_title="Dashboard Electricity", page_icon="⚡")
 
-# Custom CSS for Professional Look
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
@@ -18,69 +18,78 @@ st.markdown("""
         direction: rtl;
     }
     
-    /* تنسيق التبويبات */
+    /* تنسيق التبويبات لتظهر بشكل أزرار أنيقة */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 10px;
+        gap: 8px;
+        background-color: #ffffff;
+        padding: 10px;
+        border-radius: 15px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     .stTabs [data-baseweb="tab"] {
         height: 50px;
         white-space: pre-wrap;
-        background-color: #f0f2f6;
-        border-radius: 10px 10px 0 0;
-        gap: 1px;
-        padding-top: 10px;
-        padding-bottom: 10px;
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        color: #4a4a4a;
+        font-weight: bold;
+        border: 1px solid #e9ecef;
     }
     .stTabs [aria-selected="true"] {
         background-color: #2E86C1;
         color: white;
+        border: none;
     }
 
-    /* تنسيق الكروت (Cards) */
+    /* تنسيق الكروت (Metric Cards) */
     .metric-card {
-        background-color: #ffffff;
-        border: 1px solid #e6e6e6;
+        background: linear-gradient(135deg, #ffffff 0%, #f9f9f9 100%);
+        border-right: 5px solid #2E86C1;
         border-radius: 12px;
         padding: 20px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
         text-align: center;
-        transition: transform 0.2s;
-        margin-bottom: 10px;
+        margin-bottom: 20px;
+        transition: transform 0.3s ease;
     }
     .metric-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 8px 12px rgba(0, 0, 0, 0.15);
     }
-    .metric-value {
-        font-size: 28px;
-        font-weight: bold;
-        color: #2c3e50;
-        margin: 5px 0;
-    }
-    .metric-label {
-        font-size: 14px;
+    .metric-title {
         color: #7f8c8d;
+        font-size: 1.1rem;
+        margin-bottom: 10px;
         font-weight: 600;
     }
+    .metric-value {
+        color: #2c3e50;
+        font-size: 2.2rem;
+        font-weight: 800;
+    }
+    .metric-sub {
+        font-size: 0.9rem;
+        color: #95a5a6;
+    }
+
+    /* ألوان مخصصة للملكية */
+    .card-company { border-right-color: #2980b9; }
+    .card-private { border-right-color: #c0392b; }
     
-    /* ألوان مخصصة للأرقام */
-    .val-blue { color: #2980b9; }   /* كشك */
-    .val-red { color: #c0392b; }    /* غرفة */
-    .val-purple { color: #8e44ad; } /* هوائي */
-    
-    h3 { border-bottom: 2px solid #eee; padding-bottom: 10px; color: #2E86C1; }
+    h3 { color: #2E86C1; border-bottom: 2px solid #eee; padding-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# ألوان الرسومات
+# الألوان
 COLOR_MAP = {'كشك': '#2980b9', 'غرفة': '#c0392b', 'هوائي': '#8e44ad', 'مبنى': '#f1c40f'}
-OWNER_COLOR = {'ملك الشركة': '#2c3e50', 'ملك الغير': '#d35400'}
+SECTOR_COLORS = px.colors.qualitative.Prism
 
 # ==========================================
-# 2. دوال المعالجة (Backend Logic)
+# 2. دوال المعالجة والتحميل (Backend Logic)
 # ==========================================
+
 @st.cache_data
 def load_stations():
+    """تحميل بيانات المحطات العامة"""
     if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
         df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
         if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
@@ -91,6 +100,7 @@ def load_stations():
 
 @st.cache_data
 def load_distributors():
+    """تحميل بيانات الموزعات"""
     files = [f for f in os.listdir('.') if "517" in f and (f.endswith('.xlsx') or f.endswith('.csv'))]
     if not files: return None, None
     path = files[0]
@@ -107,6 +117,7 @@ def load_distributors():
     summary.columns = ['القطاع', 'عدد الهندسات', 'عدد الموزعات']
     return df, summary
 
+# منطق شمال الإسماعيلية
 def strict_classify_multi(row, type_cols, col_name):
     combined_type_text = ""
     if type_cols:
@@ -116,7 +127,6 @@ def strict_classify_multi(row, type_cols, col_name):
     type_clean = combined_type_text.strip().replace('أ', 'ا').replace('ة', 'ه')
     name_val = str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else ''
     name_clean = name_val.replace('أ', 'ا').replace('ة', 'ه')
-    
     if 'غرف' in type_clean: return 'غرفة'
     if 'كشك' in type_clean: return 'كشك'
     if 'هواي' in type_clean or 'علق' in type_clean: return 'هوائي'
@@ -158,7 +168,6 @@ def process_file_final(file_path, filename):
             elif ('اول' in fname_clean or '1' in fname_clean) and 'ثان' not in fname_clean: dist = 'إسماعيلية أول'
             elif 'ثان' in fname_clean or '2' in fname_clean or 'تاني' in fname_clean: dist = 'إسماعيلية ثان'
             else: dist = 'غير محدد' 
-
             owner = 'ملك الشركة' if 'شركه' in fname_clean else ('ملك الغير' if 'غير' in fname_clean else 'غير محدد')
             if 'شركه' in fname_clean: owner = 'ملك الشركة'
 
@@ -177,159 +186,195 @@ def load_all_north_data():
     if all_dfs: return pd.concat(all_dfs, ignore_index=True)
     return pd.DataFrame()
 
-# دالة مساعدة لرسم الكروت
-def draw_card(title, value, unit="", color_class=""):
+# دالة رسم الكارت
+def metric_card(title, value, subtitle="", style_class=""):
     st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">{title}</div>
-        <div class="metric-value {color_class}">{value} <span style="font-size:16px;">{unit}</span></div>
+    <div class="metric-card {style_class}">
+        <div class="metric-title">{title}</div>
+        <div class="metric-value">{value}</div>
+        <div class="metric-sub">{subtitle}</div>
     </div>
     """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. واجهة التطبيق (Tabs Interface)
+# 3. واجهة التطبيق (Tabs Structure)
 # ==========================================
-
-# تحميل البيانات مرة واحدة
-df_stations = load_stations()
-df_dist, dist_summary = load_distributors()
-df_north = load_all_north_data()
 
 st.title("⚡ منظومة إدارة الكهرباء - Dashboard")
 
-# إنشاء التبويبات
-tab1, tab2, tab3, tab4 = st.tabs(["🏠 الرئيسية", "🗺️ قطاع الشمال (تحليلي)", "🔌 الموزعات", "🏭 المحطات العامة"])
+# تحميل كل البيانات
+df_st = load_stations()
+df_dst, df_dst_summ = load_distributors()
+df_nth = load_all_north_data()
 
-# --- TAB 1: الرئيسية (Overview) ---
-with tab1:
-    st.subheader("نظرة عامة على القطاعات")
+# تعريف التبويبات
+tab_home, tab_north, tab_dist, tab_stations = st.tabs([
+    "🏠 الرئيسية (Dashboard)", 
+    "🗺️ قطاع شمال الإسماعيلية", 
+    "🔌 الموزعات (517)", 
+    "🏭 المحطات العامة"
+])
+
+# -----------------------------------------------------------------------------
+# TAB 1: الصفحة الرئيسية (الملخص الشامل)
+# -----------------------------------------------------------------------------
+with tab_home:
+    st.markdown("### 📊 ملخص بيانات الشركة")
     
-    # حسابات عامة
-    total_st = len(df_stations) if df_stations is not None else 0
-    total_dst = len(df_dist) if df_dist is not None else 0
-    total_nth = len(df_north) if not df_north.empty else 0
+    # حساب الإجماليات
+    count_st = len(df_st) if df_st is not None else 0
+    count_dst = len(df_dst) if df_dst is not None else 0
+    count_nth = len(df_nth) if not df_nth.empty else 0
     
-    col1, col2, col3 = st.columns(3)
-    with col1: draw_card("إجمالي المحطات", total_st, "محطة")
-    with col2: draw_card("إجمالي الموزعات (517)", total_dst, "موزع")
-    with col3: draw_card("إجمالي محولات الشمال", total_nth, "محول")
+    # عدد القطاعات (نحسبها من المحطات والموزعات)
+    sectors_set = set()
+    if df_st is not None: sectors_set.update(df_st['القطاع'].unique())
+    if df_dst is not None: sectors_set.update(df_dst['القطاع'].unique())
+    count_sectors = len(sectors_set)
     
+    # الصف الأول: كروت عامة
+    c1, c2, c3, c4 = st.columns(4)
+    with c1: metric_card("عدد القطاعات", count_sectors, "قطاع جغرافي")
+    with c2: metric_card("المحطات العامة", count_st, "محطة")
+    with c3: metric_card("الموزعات", count_dst, "موزع (517)")
+    with c4: metric_card("محولات الشمال", count_nth, "محول (شركة + غير)")
+
     st.markdown("---")
     
-    # رسم بياني عام (إذا توفرت داتا الشمال)
-    if not df_north.empty:
-        st.write("### 📊 توزيع الأحمال في قطاع الشمال")
-        fig_main = px.pie(df_north, names='النوع', title='نسبة أنواع المحولات (كشك/غرفة/هوائي)', 
-                          color='النوع', color_discrete_map=COLOR_MAP, hole=0.4)
-        st.plotly_chart(fig_main, use_container_width=True)
-
-# --- TAB 2: شمال الإسماعيلية (The Professional View) ---
-with tab2:
-    if not df_north.empty:
-        st.markdown("### 🧬 تحليل بيانات قطاع شمال الإسماعيلية")
+    # تفاصيل قطاع الشمال (ملك شركة vs ملك غير)
+    if not df_nth.empty:
+        st.markdown("### 🧬 تفاصيل محولات قطاع الشمال")
         
-        # --- القسم الأول: كروت الأرقام (الشركة vs الغير) ---
+        # فصل الداتا
+        df_co = df_nth[df_nth['الملكية'] == 'ملك الشركة']
+        df_pr = df_nth[df_nth['الملكية'] == 'ملك الغير']
         
-        # تصفية البيانات
-        df_co = df_north[df_north['الملكية'] == 'ملك الشركة']
-        df_ot = df_north[df_north['الملكية'] == 'ملك الغير']
+        col_co, col_pr = st.columns(2)
         
-        c1, c2 = st.columns(2)
-        
-        # --- عمود ملك الشركة ---
-        with c1:
-            st.info("🏢 **بيانات ملك الشركة**")
-            # حسابات
-            co_total = len(df_co)
-            co_kiosk = len(df_co[df_co['النوع'] == 'كشك'])
-            co_room = len(df_co[df_co['النوع'] == 'غرفة'])
-            co_aerial = len(df_co[df_co['النوع'] == 'هوائي'])
+        with col_co:
+            st.info("🏢 **ملك الشركة**")
+            k1, k2, k3 = st.columns(3)
+            with k1: metric_card("أكشاك", len(df_co[df_co['النوع']=='كشك']), style_class="card-company")
+            with k2: metric_card("غرف", len(df_co[df_co['النوع']=='غرفة']), style_class="card-company")
+            with k3: metric_card("هوائي", len(df_co[df_co['النوع']=='هوائي']), style_class="card-company")
             
-            kc1, kc2 = st.columns(2)
-            with kc1: draw_card("إجمالي المحولات", co_total)
-            with kc2: draw_card("أكشاك", co_kiosk, color_class="val-blue")
-            
-            kc3, kc4 = st.columns(2)
-            with kc3: draw_card("غرف", co_room, color_class="val-red")
-            with kc4: draw_card("هوائي", co_aerial, color_class="val-purple")
+        with col_pr:
+            st.warning("👤 **ملك الغير**")
+            p1, p2, p3 = st.columns(3)
+            with p1: metric_card("أكشاك", len(df_pr[df_pr['النوع']=='كشك']), style_class="card-private")
+            with p2: metric_card("غرف", len(df_pr[df_pr['النوع']=='غرفة']), style_class="card-private")
+            with p3: metric_card("هوائي", len(df_pr[df_pr['النوع']=='هوائي']), style_class="card-private")
 
-        # --- عمود ملك الغير ---
-        with c2:
-            st.warning("👤 **بيانات ملك الغير**")
-            # حسابات
-            ot_total = len(df_ot)
-            ot_kiosk = len(df_ot[df_ot['النوع'] == 'كشك'])
-            ot_room = len(df_ot[df_ot['النوع'] == 'غرفة'])
-            ot_aerial = len(df_ot[df_ot['النوع'] == 'هوائي'])
+    st.markdown("---")
+    st.markdown("### 📈 الرسوم التوضيحية المجمعة")
+    
+    # الصف الثالث: 3 Sunbursts + Bar Chart
+    row3_c1, row3_c2, row3_c3 = st.columns(3)
+    
+    with row3_c1:
+        if df_st is not None:
+            fig1 = px.sunburst(df_st, path=['القطاع', 'المحطة'], title="توزيع المحطات العامة")
+            st.plotly_chart(fig1, use_container_width=True)
             
-            oc1, oc2 = st.columns(2)
-            with oc1: draw_card("إجمالي المحولات", ot_total)
-            with oc2: draw_card("أكشاك", ot_kiosk, color_class="val-blue")
+    with row3_c2:
+        if df_dst is not None:
+            fig2 = px.sunburst(df_dst, path=['القطاع', 'الهندسة'], title="توزيع الموزعات")
+            st.plotly_chart(fig2, use_container_width=True)
             
-            oc3, oc4 = st.columns(2)
-            with oc3: draw_card("غرف", ot_room, color_class="val-red")
-            with oc4: draw_card("هوائي", ot_aerial, color_class="val-purple")
+    with row3_c3:
+        if not df_nth.empty:
+            fig3 = px.sunburst(df_nth, path=['الملكية', 'النوع'], title="توزيع محولات الشمال", color='النوع', color_discrete_map=COLOR_MAP)
+            st.plotly_chart(fig3, use_container_width=True)
 
-        st.markdown("---")
+    # Bar Chart مختصر
+    st.markdown("#### مقارنة حجم البيانات (Counts)")
+    data_counts = {
+        'الفئة': ['محطات عامة', 'موزعات', 'محولات الشمال'],
+        'العدد': [count_st, count_dst, count_nth]
+    }
+    fig_bar_summ = px.bar(data_counts, x='الفئة', y='العدد', color='الفئة', text='العدد', title="مقارنة أعداد الأصول")
+    fig_bar_summ.update_traces(textposition='outside')
+    st.plotly_chart(fig_bar_summ, use_container_width=True)
 
-        # --- القسم الثاني: الرسوم البيانية التفاعلية ---
-        st.subheader("📈 الرسوم البيانية التفاعلية")
+
+# -----------------------------------------------------------------------------
+# TAB 2: شمال الإسماعيلية (التفاصيل)
+# -----------------------------------------------------------------------------
+with tab_north:
+    if not df_nth.empty:
+        st.subheader("تحليل تفصيلي - قطاع الشمال")
         
-        g_col1, g_col2 = st.columns([1, 1])
+        # فلتر لعرض هندسة معينة (Interactive)
+        all_eng = ['الكل'] + list(df_nth['الهندسة'].unique())
+        selected_eng = st.selectbox("اختر الهندسة لعرض تفاصيلها:", all_eng)
         
-        with g_col1:
-            # Sunburst
-            fig_sun = px.sunburst(df_north, path=['الهندسة', 'الملكية', 'النوع'], values='القدرة',
-                                  color='الملكية', color_discrete_map=OWNER_COLOR,
-                                  title="توزيع القدرات (kVA) حسب الهندسة والملكية")
-            fig_sun.update_layout(height=500)
-            st.plotly_chart(fig_sun, use_container_width=True)
+        # فلترة البيانات بناء على الاختيار
+        df_view = df_nth if selected_eng == 'الكل' else df_nth[df_nth['الهندسة'] == selected_eng]
+        
+        # عرض البيانات المفلترة
+        col_n1, col_n2 = st.columns([2, 1])
+        
+        with col_n1:
+            fig_sun_n = px.sunburst(df_view, path=['الهندسة', 'الملكية', 'النوع', 'اسم المحول'], values='القدرة',
+                                    color='النوع', color_discrete_map=COLOR_MAP, height=700,
+                                    title=f"توزيع الأحمال والقدرات ({selected_eng})")
+            fig_sun_n.update_traces(hovertemplate='<b>%{label}</b><br>القدرة: %{value:,.1f} kVA')
+            st.plotly_chart(fig_sun_n, use_container_width=True)
+            
+        with col_n2:
+            st.write("#### إحصائيات سريعة")
+            st.write(f"إجمالي القدرة: **{df_view['القدرة'].sum():,.1f} kVA**")
+            st.write(f"عدد المحولات: **{len(df_view)}**")
+            
+            # Bar chart صغير للأنواع
+            cnt_type = df_view['النوع'].value_counts().reset_index()
+            cnt_type.columns = ['النوع', 'العدد']
+            fig_bar_n = px.bar(cnt_type, x='النوع', y='العدد', color='النوع', color_discrete_map=COLOR_MAP)
+            st.plotly_chart(fig_bar_n, use_container_width=True)
 
-        with g_col2:
-            # Stacked Bar Chart
-            counts = df_north.groupby(['الهندسة', 'النوع']).size().reset_index(name='العدد')
-            fig_bar = px.bar(counts, x='الهندسة', y='العدد', color='النوع', barmode='group',
-                             color_discrete_map=COLOR_MAP, text='العدد',
-                             title="مقارنة أنواع المحولات بين الهندسات")
-            fig_bar.update_traces(textposition='outside')
-            fig_bar.update_layout(height=500)
-            st.plotly_chart(fig_bar, use_container_width=True)
-
-        # جدول البيانات
-        with st.expander("📂 عرض الجدول التفصيلي للبيانات"):
-            st.dataframe(df_north, use_container_width=True)
-
+        st.dataframe(df_view)
     else:
-        st.error("⚠️ يرجى رفع ملفات الاكسيل الخاصة بقطاع الشمال لظهور البيانات.")
+        st.warning("لا توجد بيانات لقطاع الشمال.")
 
-# --- TAB 3: الموزعات ---
-with tab3:
-    if df_dist is not None:
-        st.subheader("تحليل الموزعات (كود 517)")
-        st.dataframe(dist_summary, use_container_width=True)
+# -----------------------------------------------------------------------------
+# TAB 3: الموزعات
+# -----------------------------------------------------------------------------
+with tab_dist:
+    if df_dst is not None:
+        st.subheader("تحليل الموزعات (517)")
         
-        col_d1, col_d2 = st.columns([1, 2])
-        with col_d1:
-            fig_d_sun = px.sunburst(df_dist, path=['القطاع', 'الهندسة'], title="توزيع الهندسات")
+        cd1, cd2 = st.columns([1, 2])
+        with cd1:
+            fig_d_sun = px.sunburst(df_dst, path=['قطاع_للرسم', 'الهندسة', 'الموزع'], height=700)
             st.plotly_chart(fig_d_sun, use_container_width=True)
-        with col_d2:
-            cnt_dist = df_dist.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد')
-            cnt_dist = cnt_dist.sort_values('العدد', ascending=False)
-            fig_d_bar = px.bar(cnt_dist, x='الهندسة', y='العدد', color='القطاع', text='العدد')
-            fig_d_bar.update_traces(textposition='outside')
-            fig_d_bar.update_layout(xaxis=dict(tickangle=-45))
+            
+        with cd2:
+            cnt_dst = df_dst.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
+            fig_d_bar = px.bar(cnt_dst, x='الهندسة', y='العدد', color='القطاع', text='العدد', title="عدد الموزعات لكل هندسة")
+            fig_d_bar.update_layout(xaxis=dict(tickmode='linear', tickangle=-90))
             st.plotly_chart(fig_d_bar, use_container_width=True)
+        
+        st.dataframe(df_dst_summ, use_container_width=True)
     else:
-        st.warning("لم يتم العثور على ملف الموزعات.")
+        st.warning("ملف الموزعات غير موجود.")
 
-# --- TAB 4: المحطات ---
-with tab4:
-    if df_stations is not None:
-        st.subheader("خريطة المحطات العامة")
-        fig_st = px.treemap(df_stations, path=['القطاع', 'المحطة'], values='العدد', 
-                            color='القطاع', hover_data=['ملاحظات'])
-        fig_st.update_layout(height=600)
-        st.plotly_chart(fig_st, use_container_width=True)
-        st.dataframe(df_stations)
+# -----------------------------------------------------------------------------
+# TAB 4: المحطات العامة
+# -----------------------------------------------------------------------------
+with tab_stations:
+    if df_st is not None:
+        st.subheader("المحطات العامة")
+        
+        cs1, cs2 = st.columns([3, 1])
+        with cs1:
+            fig_s_sun = px.sunburst(df_st, path=['القطاع', 'المحطة'], values='العدد', height=700, hover_data=['ملاحظات'])
+            st.plotly_chart(fig_s_sun, use_container_width=True)
+        with cs2:
+            cnt_sec = df_st['القطاع'].value_counts().reset_index()
+            cnt_sec.columns = ['القطاع', 'العدد']
+            fig_s_bar = px.bar(cnt_sec, x='القطاع', y='العدد', color='القطاع', text='العدد')
+            st.plotly_chart(fig_s_bar, use_container_width=True)
+            
+        st.dataframe(df_st)
     else:
-        st.warning("لم يتم العثور على ملف المحطات.")
+        st.warning("ملف المحطات غير موجود.")
