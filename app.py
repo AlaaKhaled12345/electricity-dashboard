@@ -29,67 +29,71 @@ st.markdown("""
 COLOR_MAP = {'كشك': '#2980b9', 'غرفة': '#c0392b', 'هوائي': '#8e44ad', 'مبنى': '#f1c40f'}
 
 # ==========================================
-# 2. الدالة السحرية لتوحيد الأسماء (The Fix)
+# 2. دالة التوحيد القياسي (الحل الجذري للتكرار)
 # ==========================================
 def get_standard_sector_name(raw_name):
     """
-    دالة تقوم بإجبار الاسم المدخل ليكون واحداً من الأسماء القياسية الـ 11
+    تقوم هذه الدالة باستقبال الاسم المكتوب بأي طريقة وترجعه لاسم موحد.
     """
+    if pd.isna(raw_name): return None
     s = str(raw_name).strip()
-    # تنظيف الحروف (توحيد الهمزات والهاء)
-    s = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه')
     
-    # القواعد (Mapping Rules)
-    if 'سويس' in s: return 'قطاع السويس'
-    if 'بور' in s and 'سعيد' in s: return 'قطاع بورسعيد'
-    if 'مدن' in s and 'جديده' in s: return 'قطاع المدن الجديدة'
-    if 'بحر' in s and 'احمر' in s: return 'قطاع البحر الأحمر'
+    # تنظيف الحروف العربية
+    s_clean = s.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه')
     
-    if 'سيناء' in s:
-        if 'شمال' in s: return 'قطاع شمال سيناء'
-        if 'جنوب' in s: return 'قطاع جنوب سيناء'
+    # القواعد (Mapping Logic)
+    if 'سويس' in s_clean: return 'قطاع السويس'
+    if 'بور' in s_clean and 'سعيد' in s_clean: return 'قطاع بورسعيد'
+    if 'مدن' in s_clean and 'جديده' in s_clean: return 'قطاع المدن الجديدة'
+    if 'بحر' in s_clean and 'احمر' in s_clean: return 'قطاع البحر الأحمر'
+    
+    if 'سيناء' in s_clean:
+        if 'شمال' in s_clean: return 'قطاع شمال سيناء'
+        if 'جنوب' in s_clean: return 'قطاع جنوب سيناء'
         
-    if 'شرقيه' in s:
-        if 'شمال' in s: return 'قطاع شمال الشرقية'
-        if 'جنوب' in s: return 'قطاع جنوب الشرقية'
-        if 'وسط' in s: return 'قطاع وسط الشرقية'
+    if 'شرقيه' in s_clean:
+        if 'شمال' in s_clean: return 'قطاع شمال الشرقية'
+        if 'جنوب' in s_clean: return 'قطاع جنوب الشرقية'
+        if 'وسط' in s_clean: return 'قطاع وسط الشرقية'
         
-    if 'اسماعيليه' in s:
-        # استبعاد الصفوف التجميعية الغريبة مثل "قطاعي شمال - جنوب"
-        if 'شمال' in s and 'جنوب' in s: return None 
-        if 'شمال' in s: return 'قطاع شمال الإسماعيلية'
-        if 'جنوب' in s: return 'قطاع جنوب الإسماعيلية'
+    if 'اسماعيليه' in s_clean:
+        # هنا يتم استبعاد الصفوف التجميعية مثل "قطاعي شمال - جنوب"
+        if 'شمال' in s_clean and 'جنوب' in s_clean: return None 
+        if 'شمال' in s_clean: return 'قطاع شمال الإسماعيلية'
+        if 'جنوب' in s_clean: return 'قطاع جنوب الإسماعيلية'
         
-    return None # لو الاسم مش مفهوم أو فارغ يرجعه None عشان يتفلتر
+    return None # أي اسم لا يطابق القواعد أعلاه يتم حذفه
 
 # ==========================================
-# 3. دوال التحميل (معدلة لتستخدم التوحيد)
+# 3. دوال التحميل (محدثة لتطبيق التوحيد فوراً)
 # ==========================================
 
 @st.cache_data
 def load_stations():
-    if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
-        df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
-        if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
-        else: df['ملاحظات'] = 'غير متوفر'
-        
-        # تطبيق التوحيد فوراً على العمود
-        df['القطاع_الاصلي'] = df['القطاع'] # نحتفظ بالاصلي لو احتجناه
-        df['القطاع'] = df['القطاع'].apply(get_standard_sector_name)
-        
-        # حذف الصفوف التي لم يتم التعرف عليها (None)
-        df = df.dropna(subset=['القطاع'])
-        
-        df['العدد'] = 1
-        return df
-    return None
+    try:
+        if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
+            df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
+            if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
+            else: df['ملاحظات'] = 'غير متوفر'
+            
+            # --- تطبيق التنظيف هنا ---
+            df['القطاع'] = df['القطاع'].apply(get_standard_sector_name)
+            df = df.dropna(subset=['القطاع']) # حذف الصفوف التي لم يتم التعرف عليها
+            
+            df['العدد'] = 1
+            return df
+        return None
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء تحميل ملف المحطات: {e}")
+        return None
 
 @st.cache_data
 def load_distributors():
-    files = [f for f in os.listdir('.') if "517" in f and (f.endswith('.xlsx') or f.endswith('.csv'))]
-    if not files: return None, None
-    path = files[0]
     try:
+        files = [f for f in os.listdir('.') if "517" in f and (f.endswith('.xlsx') or f.endswith('.csv'))]
+        if not files: return None, None
+        path = files[0]
+        
         if path.endswith('.csv'): df = pd.read_csv(path).iloc[:, [1, 2, 3, 4]]
         else: df = pd.read_excel(path).iloc[:, [1, 2, 3, 4]]
             
@@ -97,9 +101,9 @@ def load_distributors():
         df = df.replace('nan', pd.NA).ffill()
         df = df[pd.to_numeric(df['مسلسل'], errors='coerce').notnull()]
         
-        # تطبيق التوحيد هنا أيضاً
+        # --- تطبيق التنظيف هنا ---
         df['القطاع'] = df['القطاع'].apply(get_standard_sector_name)
-        df = df.dropna(subset=['القطاع'])
+        df = df.dropna(subset=['القطاع']) # حذف الصفوف غير المعروفة
         
         df['الهندسة'] = df['الهندسة'].astype(str).str.strip()
         eng_counts = df.groupby('القطاع')['الهندسة'].nunique()
@@ -109,7 +113,9 @@ def load_distributors():
         summary = df.groupby('القطاع').agg({'الهندسة': 'nunique', 'الموزع': 'count'}).reset_index()
         summary.columns = ['القطاع', 'عدد الهندسات', 'عدد الموزعات']
         return df, summary
-    except Exception as e: return None, None
+    except Exception as e:
+        st.error(f"حدث خطأ أثناء تحميل ملف الموزعات: {e}")
+        return None, None
 
 def strict_classify_multi(row, type_cols, col_name):
     combined_type_text = ""
@@ -159,7 +165,7 @@ def process_file_final(file_path, filename):
             else: dist = 'غير محدد' 
             owner = 'ملك الشركة' if 'شركه' in fname_clean else ('ملك الغير' if 'غير' in fname_clean else 'غير محدد')
 
-            return pd.DataFrame({'الهندسة': dist, 'الملكية': owner, 'اسم المحول': df_clean[col_name], 'النوع': df_clean['النوع_النهائي'], 'القدرة': df_clean['القدرة_النهائية'], 'القطاع': 'شمال الإسماعيلية'}) # هنا ثابت لأنه قطاع واحد
+            return pd.DataFrame({'الهندسة': dist, 'الملكية': owner, 'اسم المحول': df_clean[col_name], 'النوع': df_clean['النوع_النهائي'], 'القدرة': df_clean['القدرة_النهائية'], 'القطاع': 'شمال الإسماعيلية'})
         return None
     except: return None
 
@@ -197,12 +203,12 @@ tab_home, tab_north, tab_dist, tab_stations = st.tabs(["🏠 الرئيسية", 
 with tab_home:
     st.markdown("### 📊 ملخص بيانات الشركة")
     
-    # تجميع القطاعات الفريدة بعد التنظيف
+    # بما أننا قمنا بتنظيف البيانات عند التحميل، يمكننا الآن الاعتماد على التجميع المباشر
     unique_sectors = set()
     if df_st is not None: unique_sectors.update(df_st['القطاع'].unique())
     if df_dst is not None: unique_sectors.update(df_dst['القطاع'].unique())
     
-    # حذف القيم الفارغة إن وجدت
+    # حذف القيم الفارغة إن وجدت (زيادة تأكيد)
     unique_sectors = {x for x in unique_sectors if x is not None and str(x) != 'nan'}
     
     count_sectors = len(unique_sectors)
@@ -302,4 +308,8 @@ with tab_stations:
             fig_s_sun = px.sunburst(df_st, path=['القطاع', 'المحطة'], values='العدد', height=600)
             st.plotly_chart(fig_s_sun, use_container_width=True)
         with cs2:
-            cnt_sec = df_st['القطاع'].
+            cnt_sec = df_st['القطاع'].value_counts().reset_index()
+            cnt_sec.columns = ['القطاع', 'العدد']
+            fig_s_bar = px.bar(cnt_sec, x='القطاع', y='العدد', color='القطاع', text='العدد')
+            st.plotly_chart(fig_s_bar, use_container_width=True)
+        st.dataframe(df_st)
