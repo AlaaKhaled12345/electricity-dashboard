@@ -258,30 +258,36 @@ tab_home, tab_north, tab_dist, tab_stations = st.tabs([
 with tab_home:
     st.markdown("### 📊 ملخص بيانات الشركة")
     
-    # 1. حساب عدد القطاعات (التنظيف الذكي)
+    # ----------------------------------------------------
+    # الحل الجذري لمشكلة عدد القطاعات (التنظيف الشامل)
+    # ----------------------------------------------------
     all_sectors_raw = []
     
-    # نجمع الأسماء من ملف المحطات وملف الموزعات
+    # 1. تجميع الأسماء من كل المصادر المتاحة
     if df_st is not None: 
-        all_sectors_raw.extend(df_st['القطاع'].tolist())
+        all_sectors_raw.extend(df_st['القطاع'].astype(str).tolist())
     if df_dst is not None: 
-        all_sectors_raw.extend(df_dst['القطاع'].tolist())
+        all_sectors_raw.extend(df_dst['القطاع'].astype(str).tolist())
     
-    # عملية الفلترة والتوحيد
+    # 2. عملية الفلترة والتوحيد (Normalization)
     clean_sectors_set = set()
+    
     for s in all_sectors_raw:
-        # تحويل لنص + مسح المسافات
-        s_str = str(s).strip()
+        # مسح المسافات الزائدة
+        s_clean = s.strip()
         
-        # استبعاد القيم الفارغة والـ nan
-        if s_str.lower() in ['nan', 'none', '', 'null']:
-            continue
-            
         # توحيد الحروف (اختياري لزيادة الدقة)
-        # s_str = s_str.replace('إ', 'ا').replace('أ', 'ا').replace('ة', 'ه')
+        # يحول "أ" و "إ" و "آ" إلى "ا" 
+        # يحول "ة" إلى "ه"
+        s_clean = s_clean.replace('أ', 'ا').replace('إ', 'ا').replace('آ', 'ا').replace('ة', 'ه')
         
-        # إضافة للمجموعة (Set تمنع التكرار)
-        clean_sectors_set.add(s_str)
+        # استبعاد القيم غير الصحيحة
+        invalid_values = ['nan', 'none', 'null', '', 'nat']
+        if s_clean.lower() not in invalid_values:
+            # استبعاد العناوين الغريبة اللي ظهرت في الصورة زي "قطاعي شمال - جنوب"
+            # (اختياري: لو عايزه تشيلي حاجات معينة ضيفي شرط هنا)
+            if "قطاعى" not in s_clean: 
+                 clean_sectors_set.add(s_clean)
             
     count_sectors = len(clean_sectors_set)
     
@@ -295,8 +301,8 @@ with tab_home:
     with c1: 
         metric_card("عدد القطاعات", count_sectors, "قطاع جغرافي")
         # زرار فحص للتأكد
-        with st.expander("عرض القائمة النظيفة للقطاعات"):
-            st.write(list(clean_sectors_set))
+        with st.expander("🔍 عرض أسماء القطاعات (للمراجعة)"):
+            st.write(sorted(list(clean_sectors_set)))
             
     with c2: metric_card("المحطات العامة", count_st, "محطة")
     with c3: metric_card("الموزعات", count_dst, "موزع (517)")
