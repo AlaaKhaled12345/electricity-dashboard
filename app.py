@@ -82,24 +82,14 @@ st.markdown("""
 COLOR_MAP = {'كشك': '#2980b9', 'غرفة': '#c0392b', 'هوائي': '#8e44ad', 'مبنى': '#f1c40f'}
 
 # ==========================================
-# دالة توحيد أسماء القطاعات (معدلة لضبط العدد 11)
+# دالة توحيد أسماء القطاعات
 # ==========================================
 def clean_sector_name(name):
-    """دالة لتوحيد أسماء القطاعات وحل مشكلة التكرار والأسماء المزدوجة"""
     if pd.isna(name): return "غير محدد"
     s = str(name).strip()
-    
-    # توحيد الحروف العربية (أ -> ا، ة -> هـ)
     s = s.replace('أ', 'ا').replace('ة', 'ه')
-    
-    # إزالة كلمة قطاع/قطاعي والمسافات الزائدة
     s = s.replace('قطاعى', '').replace('قطاع', '').strip()
-    s = ' '.join(s.split()) # إزالة المسافات المزدوجة
-
-    # لو الاسم يحتوي على "شمال - جنوب" (القطاع المزدوج اللي بيعمل المشكلة)
-    # ممكن نرجعه كما هو لكن هنفلتره في العد، أو نوحده لأحدهم لو حابب.
-    # هنا هنرجعه نظيف ونفلتره في التبويب الرئيسي
-    
+    s = ' '.join(s.split()) 
     return f"قطاع {s}"
 
 # ==========================================
@@ -108,60 +98,38 @@ def clean_sector_name(name):
 
 @st.cache_data
 def load_stations():
-    """تحميل بيانات المحطات العامة"""
     if os.path.exists('Electricity_Stations_Final_Cleaned.xlsx'):
         df = pd.read_excel('Electricity_Stations_Final_Cleaned.xlsx')
-        
-        # 1. تنظيف اسم القطاع فوراً
         df['القطاع'] = df['القطاع'].apply(clean_sector_name)
-        
-        # 2. تنظيف المحطات
         col_name = 'المحطة' if 'المحطة' in df.columns else df.columns[1]
         df = df.dropna(subset=[col_name]) 
         df = df[df[col_name].astype(str).str.len() > 1]
-        
-        if 'ملاحظات' in df.columns: 
-            df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
-        else: 
-            df['ملاحظات'] = 'غير متوفر'
-        
+        if 'ملاحظات' in df.columns: df['ملاحظات'] = df['ملاحظات'].fillna('لا توجد ملاحظات')
+        else: df['ملاحظات'] = 'غير متوفر'
         df['العدد'] = 1
         return df
     return None
 
 @st.cache_data
 def load_distributors():
-    """تحميل بيانات الموزعات (517)"""
     files = [f for f in os.listdir('.') if "517" in f and (f.endswith('.xlsx') or f.endswith('.csv'))]
     if not files: return None, None
-    
     path = files[0]
     try:
-        if path.endswith('.csv'):
-            df = pd.read_csv(path).iloc[:, [1, 2, 3, 4]]
-        else:
-            df = pd.read_excel(path).iloc[:, [1, 2, 3, 4]]
-            
+        if path.endswith('.csv'): df = pd.read_csv(path).iloc[:, [1, 2, 3, 4]]
+        else: df = pd.read_excel(path).iloc[:, [1, 2, 3, 4]]
         df.columns = ['القطاع', 'الهندسة', 'مسلسل', 'الموزع']
         df = df.replace('nan', pd.NA).ffill()
         df = df[pd.to_numeric(df['مسلسل'], errors='coerce').notnull()]
-        
-        # تنظيف اسم القطاع
         df['القطاع'] = df['القطاع'].apply(clean_sector_name)
         df['الهندسة'] = df['الهندسة'].astype(str).str.strip()
-        
         eng_counts = df.groupby('القطاع')['الهندسة'].nunique()
         df['قطاع_للرسم'] = df['القطاع'].apply(lambda x: f"{x} (هندسات: {eng_counts.get(x, 0)})")
-        
         df['عدد_الموزعات'] = 1
-        
-        # جدول الملخص
         summary = df.groupby('القطاع').agg({'الهندسة': 'nunique', 'الموزع': 'count'}).reset_index()
         summary.columns = ['القطاع', 'عدد الهندسات', 'عدد الموزعات']
-        
         return df, summary
-    except Exception as e:
-        return None, None
+    except Exception as e: return None, None
 
 def strict_classify_multi(row, type_cols, col_name):
     combined_type_text = ""
@@ -169,11 +137,9 @@ def strict_classify_multi(row, type_cols, col_name):
         for col in type_cols:
             val = str(row[col])
             if pd.notna(val) and val.strip() != 'nan': combined_type_text += val + " "
-            
     type_clean = combined_type_text.strip().replace('أ', 'ا').replace('ة', 'ه')
     name_val = str(row[col_name]).strip() if col_name and pd.notna(row[col_name]) else ''
     name_clean = name_val.replace('أ', 'ا').replace('ة', 'ه')
-
     if 'غرف' in type_clean: return 'غرفة'
     if 'كشك' in type_clean: return 'كشك'
     if 'هواي' in type_clean or 'علق' in type_clean: return 'هوائي'
@@ -191,46 +157,32 @@ def process_file_final(file_path, filename):
                 start_row = idx
                 found_header = True
                 break
-        
         if not found_header: return None
-        
         df = pd.read_excel(file_path, header=start_row)
         df.columns = df.columns.astype(str).str.strip()
-
         col_name = next((c for c in df.columns if 'اسم' in c or 'محول' in c or 'بيان' in c), None)
         type_cols = [c for c in df.columns if 'نوع' in c or 'كشك' in c or 'غرف' in c]
         col_cap  = next((c for c in df.columns if 'قدرة' in c or 'kva' in c.lower()), None)
-
         if col_name:
             df_clean = df.dropna(subset=[col_name]).copy()
             df_clean = df_clean[~df_clean[col_name].astype(str).str.contains('total|اجمالي|عدد', case=False, na=False)]
             df_clean = df_clean[df_clean[col_name].astype(str).str.len() > 1]
-            
             df_clean['النوع_النهائي'] = df_clean.apply(lambda x: strict_classify_multi(x, type_cols, col_name), axis=1)
-
             if col_cap:
-                df_clean['القدرة_النهائية'] = pd.to_numeric(
-                    df_clean[col_cap].astype(str).str.replace(',', '').str.replace(' ', ''), 
-                    errors='coerce'
-                ).fillna(0)
-            else: 
-                df_clean['القدرة_النهائية'] = 0.0
-
+                df_clean['القدرة_النهائية'] = pd.to_numeric(df_clean[col_cap].astype(str).str.replace(',', '').str.replace(' ', ''), errors='coerce').fillna(0)
+            else: df_clean['القدرة_النهائية'] = 0.0
+            
             fname_clean = filename.replace('أ', 'ا').replace('ة', 'ه').lower()
             if 'زايد' in fname_clean: dist = 'الشيخ زايد'
             elif ('اول' in fname_clean or '1' in fname_clean) and 'ثان' not in fname_clean: dist = 'إسماعيلية أول'
             elif 'ثان' in fname_clean or '2' in fname_clean or 'تاني' in fname_clean: dist = 'إسماعيلية ثان'
             else: dist = 'غير محدد' 
-            
             owner = 'ملك الشركة' if 'شركه' in fname_clean else ('ملك الغير' if 'غير' in fname_clean else 'غير محدد')
 
             return pd.DataFrame({
-                'الهندسة': dist, 
-                'الملكية': owner, 
-                'اسم المحول': df_clean[col_name],
-                'النوع': df_clean['النوع_النهائي'], 
-                'القدرة': df_clean['القدرة_النهائية'],
-                'القطاع': 'قطاع شمال الإسماعيلية' 
+                'الهندسة': dist, 'الملكية': owner, 'اسم المحول': df_clean[col_name],
+                'النوع': df_clean['النوع_النهائي'], 'القدرة': df_clean['القدرة_النهائية'],
+                'القطاع': 'قطاع شمال الاسماعيليه' # تم التوحيد لتطابق الدوال
             })
         return None
     except: return None
@@ -239,12 +191,14 @@ def load_all_north_data():
     all_dfs = []
     excluded = ['Electricity_Stations_Final_Cleaned.xlsx', 'requirements.txt', 'app.py', '.git']
     files = [f for f in os.listdir('.') if f.endswith(('.xls', '.xlsx')) and f not in excluded and "517" not in f and not f.startswith('~$')]
-    
     for f in files:
         res = process_file_final(f, f)
         if res is not None: all_dfs.append(res)
-        
-    if all_dfs: return pd.concat(all_dfs, ignore_index=True)
+    if all_dfs: 
+        df_final = pd.concat(all_dfs, ignore_index=True)
+        # تمرير اسم القطاع على دالة التنظيف لضمان التطابق التام
+        df_final['القطاع'] = df_final['القطاع'].apply(clean_sector_name)
+        return df_final
     return pd.DataFrame()
 
 def metric_card(title, value, subtitle="", style_class=""):
@@ -262,14 +216,14 @@ def metric_card(title, value, subtitle="", style_class=""):
 
 st.title("⚡ منظومة إدارة الكهرباء - Dashboard")
 
-# تحميل البيانات عند بدء التشغيل
 df_st = load_stations()
 df_dst, df_dst_summ = load_distributors()
 df_nth = load_all_north_data()
 
-# تعريف التبويبات
-tab_home, tab_north, tab_dist, tab_stations = st.tabs([
+# إضافة التاب الجديد "تفاصيل القطاعات"
+tab_home, tab_sector_details, tab_north, tab_dist, tab_stations = st.tabs([
     "🏠 الرئيسية (Dashboard)", 
+    "🔍 تفاصيل القطاعات", # التاب الجديد
     "🗺️ قطاع شمال الإسماعيلية", 
     "🔌 الموزعات (517)", 
     "🏭 المحطات العامة"
@@ -280,59 +234,34 @@ tab_home, tab_north, tab_dist, tab_stations = st.tabs([
 # -----------------------------------------------------------------------------
 with tab_home:
     st.markdown("### 📊 ملخص بيانات الشركة")
-    
-    # ----------------------------------------------------
-    # حساب الأعداد (تم ضبط الفلتر هنا للحصول على 11)
-    # ----------------------------------------------------
-    
     all_sectors_unique = set()
-    if df_st is not None: 
-        all_sectors_unique.update(df_st['القطاع'].unique())
-    if df_dst is not None: 
-        all_sectors_unique.update(df_dst['القطاع'].unique())
+    if df_st is not None: all_sectors_unique.update(df_st['القطاع'].unique())
+    if df_dst is not None: all_sectors_unique.update(df_dst['القطاع'].unique())
     
-    # الفلترة الذكية: استبعاد "غير محدد" واستبعاد "قطاع شمال - جنوب" لأنه مكرر مجمع
-    clean_sectors = [
-        s for s in all_sectors_unique 
-        if s != "غير محدد" 
-        and str(s) != 'nan'
-        and "شمال - جنوب" not in s # <--- ده السطر اللي هيشيل الزيادة (رقم 12)
-    ]
-    
+    clean_sectors = [s for s in all_sectors_unique if s != "غير محدد" and str(s) != 'nan' and "شمال - جنوب" not in s]
     count_sectors = len(clean_sectors)
-    
-    # باقي العدادات
     count_st = len(df_st) if df_st is not None else 0
     count_dst = len(df_dst) if df_dst is not None else 0
     count_nth = len(df_nth) if not df_nth.empty else 0
     
-    # عرض الكروت
     c1, c2, c3, c4 = st.columns(4)
-    with c1: 
-        metric_card("عدد القطاعات", count_sectors, "قطاع جغرافي")
-            
+    with c1: metric_card("عدد القطاعات", count_sectors, "قطاع جغرافي")
     with c2: metric_card("المحطات العامة", count_st, "محطة")
     with c3: metric_card("الموزعات", count_dst, "موزع (517)")
     with c4: metric_card("محولات الشمال", count_nth, "محول (شركة + غير)")
 
     st.markdown("---")
-    
-    # تفاصيل قطاع الشمال
     if not df_nth.empty:
         st.markdown("### 🧬 تفاصيل محولات قطاع الشمال")
-        
         df_co = df_nth[df_nth['الملكية'] == 'ملك الشركة']
         df_pr = df_nth[df_nth['الملكية'] == 'ملك الغير']
-        
         col_co, col_pr = st.columns(2)
-        
         with col_co:
             st.info("🏢 **ملك الشركة**")
             k1, k2, k3 = st.columns(3)
             with k1: metric_card("أكشاك", len(df_co[df_co['النوع']=='كشك']), style_class="card-company")
             with k2: metric_card("غرف", len(df_co[df_co['النوع']=='غرفة']), style_class="card-company")
             with k3: metric_card("هوائي", len(df_co[df_co['النوع']=='هوائي']), style_class="card-company")
-            
         with col_pr:
             st.warning("👤 **ملك الغير**")
             p1, p2, p3 = st.columns(3)
@@ -342,140 +271,144 @@ with tab_home:
 
     st.markdown("---")
     st.markdown("### 📈 الرسوم التوضيحية المجمعة")
-    
-    # رسومات Sunburst مجمعة
     row3_c1, row3_c2, row3_c3 = st.columns(3)
-    
     with row3_c1:
         if df_st is not None:
-            fig1 = px.sunburst(df_st, path=['القطاع', 'المحطة'], title="توزيع المحطات العامة")
-            st.plotly_chart(fig1, use_container_width=True)
-            
+            st.plotly_chart(px.sunburst(df_st, path=['القطاع', 'المحطة'], title="توزيع المحطات العامة"), use_container_width=True)
     with row3_c2:
         if df_dst is not None:
-            fig2 = px.sunburst(df_dst, path=['قطاع_للرسم', 'الهندسة'], title="توزيع الموزعات")
-            st.plotly_chart(fig2, use_container_width=True)
-            
+            st.plotly_chart(px.sunburst(df_dst, path=['قطاع_للرسم', 'الهندسة'], title="توزيع الموزعات"), use_container_width=True)
     with row3_c3:
         if not df_nth.empty:
-            fig3 = px.sunburst(df_nth, path=['الملكية', 'النوع'], title="توزيع محولات الشمال", color='النوع', color_discrete_map=COLOR_MAP)
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(px.sunburst(df_nth, path=['الملكية', 'النوع'], title="توزيع محولات الشمال", color='النوع', color_discrete_map=COLOR_MAP), use_container_width=True)
 
-    # Bar Chart إجمالي
     st.markdown("#### مقارنة حجم البيانات")
-    data_counts = {
-        'الفئة': ['محطات عامة', 'موزعات', 'محولات الشمال'],
-        'العدد': [count_st, count_dst, count_nth]
-    }
+    data_counts = {'الفئة': ['محطات عامة', 'موزعات', 'محولات الشمال'], 'العدد': [count_st, count_dst, count_nth]}
     fig_bar_summ = px.bar(data_counts, x='الفئة', y='العدد', color='الفئة', text='العدد', title="مقارنة أعداد الأصول")
     fig_bar_summ.update_traces(textposition='outside')
     st.plotly_chart(fig_bar_summ, use_container_width=True)
 
+# -----------------------------------------------------------------------------
+# TAB 2: تفاصيل القطاعات (التاب الجديد)
+# -----------------------------------------------------------------------------
+with tab_sector_details:
+    st.markdown("### 🏢 استعلام تفصيلي بالقطاع")
+    
+    # تجهيز قائمة القطاعات المتاحة
+    all_available_sectors = set()
+    if df_st is not None: all_available_sectors.update(df_st['القطاع'].unique())
+    if df_dst is not None: all_available_sectors.update(df_dst['القطاع'].unique())
+    clean_list = sorted([s for s in all_available_sectors if s != "غير محدد" and str(s) != 'nan' and "شمال - جنوب" not in s])
+    
+    # القائمة المنسدلة لاختيار القطاع
+    selected_sector = st.selectbox("📌 اختر القطاع لعرض تفاصيله:", clean_list)
+    
+    if selected_sector:
+        st.markdown(f"#### تفاصيل: {selected_sector}")
+        
+        # 1. فلترة البيانات للقطاع المختار
+        sec_st = df_st[df_st['القطاع'] == selected_sector] if df_st is not None else pd.DataFrame()
+        sec_dst = df_dst[df_dst['القطاع'] == selected_sector] if df_dst is not None else pd.DataFrame()
+        sec_nth = df_nth[df_nth['القطاع'] == selected_sector] if not df_nth.empty else pd.DataFrame()
+        
+        # 2. حساب الأرقام الأساسية
+        num_stations = len(sec_st)
+        num_eng = sec_dst['الهندسة'].nunique() if not sec_dst.empty else 0
+        num_dist = len(sec_dst)
+        
+        # عرض الكروت العلوية
+        col_s1, col_s2, col_s3 = st.columns(3)
+        col_s1.metric("عدد المحطات العامة", num_stations)
+        col_s2.metric("عدد الهندسات", num_eng)
+        col_s3.metric("إجمالي الموزعات", num_dist)
+        
+        st.divider()
+        
+        col_view1, col_view2 = st.columns(2)
+        
+        # 3. عرض الموزعات لكل هندسة
+        with col_view1:
+            st.markdown("##### 🔌 عدد الموزعات لكل هندسة")
+            if not sec_dst.empty:
+                dist_per_eng = sec_dst.groupby('الهندسة').size().reset_index(name='عدد الموزعات')
+                st.dataframe(dist_per_eng, use_container_width=True, hide_index=True)
+            else:
+                st.info("لا توجد بيانات موزعات مسجلة لهذا القطاع.")
+                
+        # 4. عرض المحولات لكل هندسة (مفصلة)
+        with col_view2:
+            st.markdown("##### ⚡ تفاصيل المحولات لكل هندسة (الشركة / الغير)")
+            if not sec_nth.empty:
+                # تجميع البيانات حسب الهندسة، الملكية، والنوع
+                trans_grouped = sec_nth.groupby(['الهندسة', 'الملكية', 'النوع']).size().reset_index(name='العدد')
+                
+                # تحويل الشكل ليكون جدول احترافي (Pivot Table)
+                pivot_table = trans_grouped.pivot_table(
+                    index='الهندسة', 
+                    columns=['الملكية', 'النوع'], 
+                    values='العدد', 
+                    fill_value=0
+                ).astype(int)
+                
+                st.dataframe(pivot_table, use_container_width=True)
+            else:
+                st.info("ℹ️ لا توجد بيانات محولات مسجلة لهذا القطاع في الملفات الحالية.")
 
 # -----------------------------------------------------------------------------
-# TAB 2: شمال الإسماعيلية
+# TAB 3: شمال الإسماعيلية
 # -----------------------------------------------------------------------------
 with tab_north:
     if not df_nth.empty:
         st.subheader("تحليل تفصيلي - قطاع الشمال")
-        
         all_eng = ['الكل'] + list(df_nth['الهندسة'].unique())
         selected_eng = st.selectbox("اختر الهندسة:", all_eng)
-        
         df_view = df_nth if selected_eng == 'الكل' else df_nth[df_nth['الهندسة'] == selected_eng]
         
         col_n1, col_n2 = st.columns([2, 1])
-        
         with col_n1:
-            fig_sun_n = px.sunburst(df_view, path=['الهندسة', 'الملكية', 'النوع', 'اسم المحول'], values='القدرة',
-                                    color='النوع', color_discrete_map=COLOR_MAP, height=700,
-                                    title=f"توزيع الأحمال والقدرات ({selected_eng})")
-            fig_sun_n.update_traces(hovertemplate='<b>%{label}</b><br>القدرة: %{value:,.1f} kVA')
+            fig_sun_n = px.sunburst(df_view, path=['الهندسة', 'الملكية', 'النوع', 'اسم المحول'], values='القدرة', color='النوع', color_discrete_map=COLOR_MAP, height=700)
             st.plotly_chart(fig_sun_n, use_container_width=True)
-            
         with col_n2:
-            st.write("#### إحصائيات سريعة")
             st.metric("إجمالي القدرة", f"{df_view['القدرة'].sum():,.1f} kVA")
             st.metric("عدد المحولات", len(df_view))
-            
             cnt_type = df_view['النوع'].value_counts().reset_index()
             cnt_type.columns = ['النوع', 'العدد']
             fig_bar_n = px.bar(cnt_type, x='النوع', y='العدد', color='النوع', color_discrete_map=COLOR_MAP)
             st.plotly_chart(fig_bar_n, use_container_width=True)
-
         st.dataframe(df_view)
     else:
-        st.warning("لا توجد بيانات لقطاع الشمال (تأكد من وجود ملفات Excel).")
+        st.warning("لا توجد بيانات لقطاع الشمال.")
 
 # -----------------------------------------------------------------------------
-# TAB 3: الموزعات
+# TAB 4: الموزعات
 # -----------------------------------------------------------------------------
 with tab_dist:
     if df_dst is not None:
         st.subheader("تحليل الموزعات (517)")
         
-        # --- إنشاء خريطة ألوان مخصصة وموحدة للقطاعات ---
-        # الألوان المستخرجة من الصورة
-        CUSTOM_COLORS = [
-            '#1f77b4', # أزرق داكن
-            '#a6cee3', # أزرق فاتح
-            '#e31a1c', # أحمر
-            '#fb9a99', # وردي
-            '#009E73', # أخضر مائل للأزرق (Teal)
-            '#b2df8a', # أخضر فاتح
-            '#ff7f00', # برتقالي
-            '#fdbf6f', # أصفر ذهبي
-            '#6a3d9a', # بنفسجي داكن
-            '#cab2d6'  # بنفسجي فاتح
-        ]
-        
-        # الحصول على قائمة القطاعات الفريدة وترتيبها
-        unique_sectors = sorted(df_dst['القطاع'].unique())
-        
-        # ربط كل قطاع بلون ثابت من القائمة
-        sector_colors_map = {sector: CUSTOM_COLORS[i % len(CUSTOM_COLORS)] for i, sector in enumerate(unique_sectors)}
-        # ------------------------------------------------
+        CUSTOM_COLORS = ['#1f77b4', '#a6cee3', '#e31a1c', '#fb9a99', '#009E73', '#b2df8a', '#ff7f00', '#fdbf6f', '#6a3d9a', '#cab2d6']
+        unique_sectors_dist = sorted(df_dst['القطاع'].unique())
+        sector_colors_map = {sector: CUSTOM_COLORS[i % len(CUSTOM_COLORS)] for i, sector in enumerate(unique_sectors_dist)}
 
         cd1, cd2 = st.columns([1, 2])
         with cd1:
-            # تعديل Sunburst لاستخدام خريطة الألوان الموحدة
-            fig_d_sun = px.sunburst(
-                df_dst, 
-                path=['قطاع_للرسم', 'الهندسة', 'الموزع'], 
-                color='القطاع', # التلوين بناءً على اسم القطاع الأصلي
-                color_discrete_map=sector_colors_map, # استخدام الخريطة الموحدة
-                height=700
-            )
+            fig_d_sun = px.sunburst(df_dst, path=['قطاع_للرسم', 'الهندسة', 'الموزع'], color='القطاع', color_discrete_map=sector_colors_map, height=700)
             st.plotly_chart(fig_d_sun, use_container_width=True)
-            
         with cd2:
             cnt_dst = df_dst.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
-            
-            # تعديل Bar Chart لاستخدام نفس خريطة الألوان
-            fig_d_bar = px.bar(
-                cnt_dst, 
-                x='الهندسة', 
-                y='العدد', 
-                color='القطاع', 
-                color_discrete_map=sector_colors_map, # استخدام نفس الخريطة الموحدة
-                text='العدد', 
-                title="عدد الموزعات لكل هندسة"
-            )
+            fig_d_bar = px.bar(cnt_dst, x='الهندسة', y='العدد', color='القطاع', color_discrete_map=sector_colors_map, text='العدد', title="عدد الموزعات لكل هندسة")
             fig_d_bar.update_layout(xaxis=dict(tickmode='linear', tickangle=-90))
             st.plotly_chart(fig_d_bar, use_container_width=True)
-        
-        st.write("### ملخص البيانات:")
         st.dataframe(df_dst_summ, use_container_width=True)
     else:
         st.warning("ملف الموزعات (517) غير موجود.")
 
 # -----------------------------------------------------------------------------
-# TAB 4: المحطات العامة
+# TAB 5: المحطات العامة
 # -----------------------------------------------------------------------------
 with tab_stations:
     if df_st is not None:
         st.subheader("المحطات العامة")
-        
         cs1, cs2 = st.columns([3, 1])
         with cs1:
             fig_s_sun = px.sunburst(df_st, path=['القطاع', 'المحطة'], values='العدد', height=700, hover_data=['ملاحظات'])
@@ -485,7 +418,6 @@ with tab_stations:
             cnt_sec.columns = ['القطاع', 'العدد']
             fig_s_bar = px.bar(cnt_sec, x='القطاع', y='العدد', color='القطاع', text='العدد')
             st.plotly_chart(fig_s_bar, use_container_width=True)
-            
         st.dataframe(df_st)
     else:
         st.warning("ملف المحطات العامة غير موجود.")
