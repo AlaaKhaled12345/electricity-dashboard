@@ -410,18 +410,45 @@ with tab_north:
 # -----------------------------------------------------------------------------
 # TAB 3: الموزعات
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 with tab_dist:
     if df_dst is not None:
         st.subheader("تحليل الموزعات (517)")
         
+        # --- إضافة خريطة ألوان موحدة للقطاعات ---
+        # استخراج أسماء القطاعات الفريدة
+        unique_sectors = df_dst['القطاع'].unique()
+        # استخدام باليتة ألوان تحتوي على ألوان كثيرة لتغطية كل القطاعات
+        color_palette = px.colors.qualitative.Alphabet 
+        # ربط كل قطاع بلون ثابت
+        sector_color_map = {sector: color_palette[i % len(color_palette)] for i, sector in enumerate(unique_sectors)}
+        # -----------------------------------------
+
         cd1, cd2 = st.columns([1, 2])
         with cd1:
-            fig_d_sun = px.sunburst(df_dst, path=['قطاع_للرسم', 'الهندسة', 'الموزع'], height=700)
+            # إضافة parameter الـ color والـ color_discrete_map
+            fig_d_sun = px.sunburst(
+                df_dst, 
+                path=['قطاع_للرسم', 'الهندسة', 'الموزع'], 
+                color='القطاع', # إجبار التلوين بناءً على اسم القطاع الأصلي
+                color_discrete_map=sector_color_map, # استخدام خريطة الألوان الموحدة
+                height=700
+            )
             st.plotly_chart(fig_d_sun, use_container_width=True)
             
         with cd2:
             cnt_dst = df_dst.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
-            fig_d_bar = px.bar(cnt_dst, x='الهندسة', y='العدد', color='القطاع', text='العدد', title="عدد الموزعات لكل هندسة")
+            
+            # إضافة parameter الـ color_discrete_map هنا أيضاً
+            fig_d_bar = px.bar(
+                cnt_dst, 
+                x='الهندسة', 
+                y='العدد', 
+                color='القطاع', 
+                color_discrete_map=sector_color_map, # استخدام نفس خريطة الألوان الموحدة
+                text='العدد', 
+                title="عدد الموزعات لكل هندسة"
+            )
             fig_d_bar.update_layout(xaxis=dict(tickmode='linear', tickangle=-90))
             st.plotly_chart(fig_d_bar, use_container_width=True)
         
@@ -450,3 +477,4 @@ with tab_stations:
         st.dataframe(df_st)
     else:
         st.warning("ملف المحطات العامة غير موجود.")
+
