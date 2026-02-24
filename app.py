@@ -75,6 +75,18 @@ st.markdown("""
     .card-private { border-right-color: #c0392b; }
     
     h3 { color: #2E86C1; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+    
+    /* تنسيق عناوين الجداول في التفاصيل */
+    .table-header {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 10px;
+        border-right: 5px solid #2E86C1;
+        margin-bottom: 15px;
+        color: #2c3e50;
+        font-weight: bold;
+        font-size: 1.1rem;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -182,7 +194,7 @@ def process_file_final(file_path, filename):
             return pd.DataFrame({
                 'الهندسة': dist, 'الملكية': owner, 'اسم المحول': df_clean[col_name],
                 'النوع': df_clean['النوع_النهائي'], 'القدرة': df_clean['القدرة_النهائية'],
-                'القطاع': 'قطاع شمال الاسماعيليه' # تم التوحيد لتطابق الدوال
+                'القطاع': 'قطاع شمال الاسماعيليه' 
             })
         return None
     except: return None
@@ -196,7 +208,6 @@ def load_all_north_data():
         if res is not None: all_dfs.append(res)
     if all_dfs: 
         df_final = pd.concat(all_dfs, ignore_index=True)
-        # تمرير اسم القطاع على دالة التنظيف لضمان التطابق التام
         df_final['القطاع'] = df_final['القطاع'].apply(clean_sector_name)
         return df_final
     return pd.DataFrame()
@@ -220,10 +231,9 @@ df_st = load_stations()
 df_dst, df_dst_summ = load_distributors()
 df_nth = load_all_north_data()
 
-# إضافة التاب الجديد "تفاصيل القطاعات"
 tab_home, tab_sector_details, tab_north, tab_dist, tab_stations = st.tabs([
     "🏠 الرئيسية (Dashboard)", 
-    "🔍 تفاصيل القطاعات", # التاب الجديد
+    "🔍 تفاصيل القطاعات", 
     "🗺️ قطاع شمال الإسماعيلية", 
     "🔌 الموزعات (517)", 
     "🏭 المحطات العامة"
@@ -289,68 +299,61 @@ with tab_home:
     st.plotly_chart(fig_bar_summ, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# TAB 2: تفاصيل القطاعات (التاب الجديد)
+# TAB 2: تفاصيل القطاعات (محدث بالكروت والجداول الواضحة)
 # -----------------------------------------------------------------------------
 with tab_sector_details:
     st.markdown("### 🏢 استعلام تفصيلي بالقطاع")
     
-    # تجهيز قائمة القطاعات المتاحة
     all_available_sectors = set()
     if df_st is not None: all_available_sectors.update(df_st['القطاع'].unique())
     if df_dst is not None: all_available_sectors.update(df_dst['القطاع'].unique())
     clean_list = sorted([s for s in all_available_sectors if s != "غير محدد" and str(s) != 'nan' and "شمال - جنوب" not in s])
     
-    # القائمة المنسدلة لاختيار القطاع
     selected_sector = st.selectbox("📌 اختر القطاع لعرض تفاصيله:", clean_list)
     
     if selected_sector:
-        st.markdown(f"#### تفاصيل: {selected_sector}")
+        st.markdown(f"#### 📊 إحصائيات: {selected_sector}")
         
-        # 1. فلترة البيانات للقطاع المختار
         sec_st = df_st[df_st['القطاع'] == selected_sector] if df_st is not None else pd.DataFrame()
         sec_dst = df_dst[df_dst['القطاع'] == selected_sector] if df_dst is not None else pd.DataFrame()
         sec_nth = df_nth[df_nth['القطاع'] == selected_sector] if not df_nth.empty else pd.DataFrame()
         
-        # 2. حساب الأرقام الأساسية
         num_stations = len(sec_st)
         num_eng = sec_dst['الهندسة'].nunique() if not sec_dst.empty else 0
         num_dist = len(sec_dst)
         
-        # عرض الكروت العلوية
+        # 1. عرض الأرقام في كروت أنيقة
         col_s1, col_s2, col_s3 = st.columns(3)
-        col_s1.metric("عدد المحطات العامة", num_stations)
-        col_s2.metric("عدد الهندسات", num_eng)
-        col_s3.metric("إجمالي الموزعات", num_dist)
+        with col_s1: metric_card("المحطات العامة", num_stations, "محطة بالقطاع")
+        with col_s2: metric_card("عدد الهندسات", num_eng, "هندسة فرعية")
+        with col_s3: metric_card("إجمالي الموزعات", num_dist, "موزع تابع للقطاع")
         
-        st.divider()
+        st.markdown("---")
         
-        col_view1, col_view2 = st.columns(2)
+        # 2. عرض الجداول بشكل واضح
+        col_view1, col_view2 = st.columns([1, 1.5]) # إعطاء مساحة أكبر لجدول المحولات
         
-        # 3. عرض الموزعات لكل هندسة
         with col_view1:
-            st.markdown("##### 🔌 عدد الموزعات لكل هندسة")
+            st.markdown("<div class='table-header'>🔌 عدد الموزعات لكل هندسة</div>", unsafe_allow_html=True)
             if not sec_dst.empty:
                 dist_per_eng = sec_dst.groupby('الهندسة').size().reset_index(name='عدد الموزعات')
-                st.dataframe(dist_per_eng, use_container_width=True, hide_index=True)
+                # استخدام st.table عشان يكون الجدول بشكله التقليدي الواضح للعين
+                st.table(dist_per_eng.set_index('الهندسة'))
             else:
                 st.info("لا توجد بيانات موزعات مسجلة لهذا القطاع.")
                 
-        # 4. عرض المحولات لكل هندسة (مفصلة)
         with col_view2:
-            st.markdown("##### ⚡ تفاصيل المحولات لكل هندسة (الشركة / الغير)")
+            st.markdown("<div class='table-header'>⚡ تفاصيل المحولات (الشركة / الغير)</div>", unsafe_allow_html=True)
             if not sec_nth.empty:
-                # تجميع البيانات حسب الهندسة، الملكية، والنوع
                 trans_grouped = sec_nth.groupby(['الهندسة', 'الملكية', 'النوع']).size().reset_index(name='العدد')
-                
-                # تحويل الشكل ليكون جدول احترافي (Pivot Table)
                 pivot_table = trans_grouped.pivot_table(
                     index='الهندسة', 
                     columns=['الملكية', 'النوع'], 
                     values='العدد', 
                     fill_value=0
                 ).astype(int)
-                
-                st.dataframe(pivot_table, use_container_width=True)
+                # استخدام st.dataframe مع التحكم في العرض ليكون الجدول متفاعل وواضح
+                st.dataframe(pivot_table, use_container_width=True, height=350)
             else:
                 st.info("ℹ️ لا توجد بيانات محولات مسجلة لهذا القطاع في الملفات الحالية.")
 
