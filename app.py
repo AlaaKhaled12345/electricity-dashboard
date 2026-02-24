@@ -78,7 +78,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# خريطة الألوان الموحدة
+# خريطة الألوان الموحدة للأنواع
 COLOR_MAP = {'كشك': '#2980b9', 'غرفة': '#c0392b', 'هوائي': '#8e44ad', 'مبنى': '#f1c40f'}
 
 # ==========================================
@@ -410,28 +410,40 @@ with tab_north:
 # -----------------------------------------------------------------------------
 # TAB 3: الموزعات
 # -----------------------------------------------------------------------------
-# -----------------------------------------------------------------------------
 with tab_dist:
     if df_dst is not None:
         st.subheader("تحليل الموزعات (517)")
         
-        # --- إضافة خريطة ألوان موحدة للقطاعات ---
-        # استخراج أسماء القطاعات الفريدة
-        unique_sectors = df_dst['القطاع'].unique()
-        # استخدام باليتة ألوان تحتوي على ألوان كثيرة لتغطية كل القطاعات
-        color_palette = px.colors.qualitative.Alphabet 
-        # ربط كل قطاع بلون ثابت
-        sector_color_map = {sector: color_palette[i % len(color_palette)] for i, sector in enumerate(unique_sectors)}
-        # -----------------------------------------
+        # --- إنشاء خريطة ألوان مخصصة وموحدة للقطاعات ---
+        # الألوان المستخرجة من الصورة
+        CUSTOM_COLORS = [
+            '#1f77b4', # أزرق داكن
+            '#a6cee3', # أزرق فاتح
+            '#e31a1c', # أحمر
+            '#fb9a99', # وردي
+            '#009E73', # أخضر مائل للأزرق (Teal)
+            '#b2df8a', # أخضر فاتح
+            '#ff7f00', # برتقالي
+            '#fdbf6f', # أصفر ذهبي
+            '#6a3d9a', # بنفسجي داكن
+            '#cab2d6'  # بنفسجي فاتح
+        ]
+        
+        # الحصول على قائمة القطاعات الفريدة وترتيبها
+        unique_sectors = sorted(df_dst['القطاع'].unique())
+        
+        # ربط كل قطاع بلون ثابت من القائمة
+        sector_colors_map = {sector: CUSTOM_COLORS[i % len(CUSTOM_COLORS)] for i, sector in enumerate(unique_sectors)}
+        # ------------------------------------------------
 
         cd1, cd2 = st.columns([1, 2])
         with cd1:
-            # إضافة parameter الـ color والـ color_discrete_map
+            # تعديل Sunburst لاستخدام خريطة الألوان الموحدة
             fig_d_sun = px.sunburst(
                 df_dst, 
                 path=['قطاع_للرسم', 'الهندسة', 'الموزع'], 
-                color='القطاع', # إجبار التلوين بناءً على اسم القطاع الأصلي
-                color_discrete_map=sector_color_map, # استخدام خريطة الألوان الموحدة
+                color='القطاع', # التلوين بناءً على اسم القطاع الأصلي
+                color_discrete_map=sector_colors_map, # استخدام الخريطة الموحدة
                 height=700
             )
             st.plotly_chart(fig_d_sun, use_container_width=True)
@@ -439,13 +451,13 @@ with tab_dist:
         with cd2:
             cnt_dst = df_dst.groupby(['القطاع', 'الهندسة']).size().reset_index(name='العدد').sort_values('العدد', ascending=False)
             
-            # إضافة parameter الـ color_discrete_map هنا أيضاً
+            # تعديل Bar Chart لاستخدام نفس خريطة الألوان
             fig_d_bar = px.bar(
                 cnt_dst, 
                 x='الهندسة', 
                 y='العدد', 
                 color='القطاع', 
-                color_discrete_map=sector_color_map, # استخدام نفس خريطة الألوان الموحدة
+                color_discrete_map=sector_colors_map, # استخدام نفس الخريطة الموحدة
                 text='العدد', 
                 title="عدد الموزعات لكل هندسة"
             )
@@ -477,4 +489,3 @@ with tab_stations:
         st.dataframe(df_st)
     else:
         st.warning("ملف المحطات العامة غير موجود.")
-
