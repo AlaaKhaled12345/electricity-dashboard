@@ -357,30 +357,26 @@ with tab_sector_details:
             else:
                 st.info("ℹ️ لا توجد بيانات محولات مسجلة لهذا القطاع في الملفات الحالية.")
 
+
 # -----------------------------------------------------------------------------
-# TAB 3: شمال الإسماعيلية
+# TAB 3: المحطات العامة
 # -----------------------------------------------------------------------------
-with tab_north:
-    if not df_nth.empty:
-        st.subheader("تحليل تفصيلي - قطاع الشمال")
-        all_eng = ['الكل'] + list(df_nth['الهندسة'].unique())
-        selected_eng = st.selectbox("اختر الهندسة:", all_eng)
-        df_view = df_nth if selected_eng == 'الكل' else df_nth[df_nth['الهندسة'] == selected_eng]
-        
-        col_n1, col_n2 = st.columns([2, 1])
-        with col_n1:
-            fig_sun_n = px.sunburst(df_view, path=['الهندسة', 'الملكية', 'النوع', 'اسم المحول'], values='القدرة', color='النوع', color_discrete_map=COLOR_MAP, height=700)
-            st.plotly_chart(fig_sun_n, use_container_width=True)
-        with col_n2:
-            st.metric("إجمالي القدرة", f"{df_view['القدرة'].sum():,.1f} kVA")
-            st.metric("عدد المحولات", len(df_view))
-            cnt_type = df_view['النوع'].value_counts().reset_index()
-            cnt_type.columns = ['النوع', 'العدد']
-            fig_bar_n = px.bar(cnt_type, x='النوع', y='العدد', color='النوع', color_discrete_map=COLOR_MAP)
-            st.plotly_chart(fig_bar_n, use_container_width=True)
-        st.dataframe(df_view)
+with tab_stations:
+    if df_st is not None:
+        st.subheader("المحطات العامة")
+        cs1, cs2 = st.columns([3, 1])
+        with cs1:
+            fig_s_sun = px.sunburst(df_st, path=['القطاع', 'المحطة'], values='العدد', height=700, hover_data=['ملاحظات'])
+            st.plotly_chart(fig_s_sun, use_container_width=True)
+        with cs2:
+            cnt_sec = df_st['القطاع'].value_counts().reset_index()
+            cnt_sec.columns = ['القطاع', 'العدد']
+            fig_s_bar = px.bar(cnt_sec, x='القطاع', y='العدد', color='القطاع', text='العدد')
+            st.plotly_chart(fig_s_bar, use_container_width=True)
+        st.dataframe(df_st)
     else:
-        st.warning("لا توجد بيانات لقطاع الشمال.")
+        st.warning("ملف المحطات العامة غير موجود.")
+
 
 # -----------------------------------------------------------------------------
 # TAB 4: الموزعات
@@ -407,20 +403,27 @@ with tab_dist:
         st.warning("ملف الموزعات (517) غير موجود.")
 
 # -----------------------------------------------------------------------------
-# TAB 5: المحطات العامة
+# TAB 5: شمال الإسماعيلية
 # -----------------------------------------------------------------------------
-with tab_stations:
-    if df_st is not None:
-        st.subheader("المحطات العامة")
-        cs1, cs2 = st.columns([3, 1])
-        with cs1:
-            fig_s_sun = px.sunburst(df_st, path=['القطاع', 'المحطة'], values='العدد', height=700, hover_data=['ملاحظات'])
-            st.plotly_chart(fig_s_sun, use_container_width=True)
-        with cs2:
-            cnt_sec = df_st['القطاع'].value_counts().reset_index()
-            cnt_sec.columns = ['القطاع', 'العدد']
-            fig_s_bar = px.bar(cnt_sec, x='القطاع', y='العدد', color='القطاع', text='العدد')
-            st.plotly_chart(fig_s_bar, use_container_width=True)
-        st.dataframe(df_st)
+with tab_north:
+    if not df_nth.empty:
+        st.subheader("تحليل تفصيلي - قطاع الشمال")
+        all_eng = ['الكل'] + list(df_nth['الهندسة'].unique())
+        selected_eng = st.selectbox("اختر الهندسة:", all_eng)
+        df_view = df_nth if selected_eng == 'الكل' else df_nth[df_nth['الهندسة'] == selected_eng]
+        
+        col_n1, col_n2 = st.columns([2, 1])
+        with col_n1:
+            fig_sun_n = px.sunburst(df_view, path=['الهندسة', 'الملكية', 'النوع', 'اسم المحول'], values='القدرة', color='النوع', color_discrete_map=COLOR_MAP, height=700)
+            st.plotly_chart(fig_sun_n, use_container_width=True)
+        with col_n2:
+            st.metric("إجمالي القدرة", f"{df_view['القدرة'].sum():,.1f} kVA")
+            st.metric("عدد المحولات", len(df_view))
+            cnt_type = df_view['النوع'].value_counts().reset_index()
+            cnt_type.columns = ['النوع', 'العدد']
+            fig_bar_n = px.bar(cnt_type, x='النوع', y='العدد', color='النوع', color_discrete_map=COLOR_MAP)
+            st.plotly_chart(fig_bar_n, use_container_width=True)
+        st.dataframe(df_view)
     else:
-        st.warning("ملف المحطات العامة غير موجود.")
+        st.warning("لا توجد بيانات لقطاع الشمال.")
+
