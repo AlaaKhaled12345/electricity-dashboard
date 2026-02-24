@@ -231,12 +231,13 @@ df_st = load_stations()
 df_dst, df_dst_summ = load_distributors()
 df_nth = load_all_north_data()
 
-tab_home, tab_sector_details, tab_north, tab_dist, tab_stations = st.tabs([
+# ----------------- تعديل الترتيب هنا -----------------
+tab_home, tab_sector_details, tab_stations, tab_dist, tab_north = st.tabs([
     "🏠 الرئيسية (Dashboard)", 
     "🔍 تفاصيل القطاعات", 
-    "🗺️ قطاع شمال الإسماعيلية", 
+    "🏭 المحطات العامة",
     "🔌 الموزعات (517)", 
-    "🏭 المحطات العامة"
+    "🗺️ قطاع شمال الإسماعيلية"
 ])
 
 # -----------------------------------------------------------------------------
@@ -299,7 +300,7 @@ with tab_home:
     st.plotly_chart(fig_bar_summ, use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# TAB 2: تفاصيل القطاعات (محدث بالكروت والجداول الواضحة)
+# TAB 2: تفاصيل القطاعات
 # -----------------------------------------------------------------------------
 with tab_sector_details:
     st.markdown("### 🏢 استعلام تفصيلي بالقطاع")
@@ -322,7 +323,6 @@ with tab_sector_details:
         num_eng = sec_dst['الهندسة'].nunique() if not sec_dst.empty else 0
         num_dist = len(sec_dst)
         
-        # 1. عرض الأرقام في كروت أنيقة
         col_s1, col_s2, col_s3 = st.columns(3)
         with col_s1: metric_card("المحطات العامة", num_stations, "محطة بالقطاع")
         with col_s2: metric_card("عدد الهندسات", num_eng, "هندسة فرعية")
@@ -330,14 +330,12 @@ with tab_sector_details:
         
         st.markdown("---")
         
-        # 2. عرض الجداول بشكل واضح
-        col_view1, col_view2 = st.columns([1, 1.5]) # إعطاء مساحة أكبر لجدول المحولات
+        col_view1, col_view2 = st.columns([1, 1.5]) 
         
         with col_view1:
             st.markdown("<div class='table-header'>🔌 عدد الموزعات لكل هندسة</div>", unsafe_allow_html=True)
             if not sec_dst.empty:
                 dist_per_eng = sec_dst.groupby('الهندسة').size().reset_index(name='عدد الموزعات')
-                # استخدام st.table عشان يكون الجدول بشكله التقليدي الواضح للعين
                 st.table(dist_per_eng.set_index('الهندسة'))
             else:
                 st.info("لا توجد بيانات موزعات مسجلة لهذا القطاع.")
@@ -352,7 +350,6 @@ with tab_sector_details:
                     values='العدد', 
                     fill_value=0
                 ).astype(int)
-                # استخدام st.dataframe مع التحكم في العرض ليكون الجدول متفاعل وواضح
                 st.dataframe(pivot_table, use_container_width=True, height=350)
             else:
                 st.info("ℹ️ لا توجد بيانات محولات مسجلة لهذا القطاع في الملفات الحالية.")
@@ -426,4 +423,3 @@ with tab_north:
         st.dataframe(df_view)
     else:
         st.warning("لا توجد بيانات لقطاع الشمال.")
-
